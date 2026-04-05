@@ -1,0 +1,122 @@
+{
+  "name": "dax",
+  "version": "0.1.0",
+  "description": "Privacy-first AI Agent Platform — Build, deploy, and manage autonomous AI agents locally.",
+  "author": "Graysoft <hello@graysoft.dev>",
+  "homepage": "https://graysoft.dev",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:renderer": "cd src/renderer && vite",
+    "dev:electron": "wait-on http://localhost:5199 && electron .",
+    "build": "cd src/renderer && vite build && cd ../.. && electron-builder",
+    "build:renderer": "cd src/renderer && vite build",
+    "start": "electron .",
+    "web": "node src/main/web-server.js",
+    "web:dev": "concurrently \"npm run dev:renderer\" \"npm run web\""
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.27.2",
+    "cheerio": "^1.2.0",
+    "chokidar": "^4.0.0",
+    "csv-parse": "^6.2.1",
+    "electron-store": "^10.0.0",
+    "lucide-react": "^0.468.0",
+    "mammoth": "^1.12.0",
+    "node-cron": "^3.0.3",
+    "pdf-parse": "^2.4.5",
+    "playwright": "^1.59.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.12.0",
+    "uuid": "^11.1.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "javascript-obfuscator": "^5.4.1",
+    "png-to-ico": "^3.0.1",
+    "postcss": "^8.4.49",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.0.0",
+    "vite-plugin-javascript-obfuscator": "^3.1.0",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "dev.graysoft.dax",
+    "productName": "Dax",
+    "copyright": "Copyright © 2026 Graysoft. All rights reserved.",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/main/**/*",
+      "src/renderer/dist/**/*",
+      "!src/main/**/*.map",
+      "!src/renderer/dist/**/*.map",
+      "!**/__tests__/**",
+      "!**/test/**",
+      "!**/tests/**",
+      "!**/scripts/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
+      }
+    ],
+    "afterPack": "build/afterPack.js",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Dax-Setup-${version}.${ext}",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/installerIcon.ico",
+      "uninstallerIcon": "build/uninstallerIcon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "license": "build/license.html",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dax",
+      "menuCategory": "Graysoft",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "uninstallDisplayName": "Dax ${version}",
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.png",
+      "artifactName": "Dax-${version}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "artifactName": "Dax-${version}.${ext}"
+    }
+  }
+}

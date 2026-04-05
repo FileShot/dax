@@ -1,0 +1,574 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Default Theme Variables (Monolith) ─────────────────── */
+:root {
+  --dax-bg: 10 10 10;
+  --dax-sidebar: 14 14 14;
+  --dax-nav: 10 10 10;
+  --dax-titlebar: 18 18 18;
+  --dax-card: 18 18 18;
+  --dax-card-hover: 24 24 24;
+  --dax-card-border: 40 40 40;
+  --dax-panel: 10 10 10;
+  --dax-panel-border: 40 40 40;
+  --dax-statusbar: 20 20 20;
+  --dax-input: 22 22 22;
+  --dax-input-border: 40 40 40;
+  --dax-input-focus: 255 107 0;
+  --dax-list-hover: 25 25 25;
+  --dax-list-active: 40 30 10;
+  --dax-text: 180 180 180;
+  --dax-text-dim: 100 100 100;
+  --dax-text-bright: 230 230 230;
+  --dax-accent: 255 107 0;
+  --dax-accent-hover: 255 130 30;
+  --dax-error: 244 135 113;
+  --dax-warning: 204 167 0;
+  --dax-success: 137 209 133;
+  --dax-info: 117 190 255;
+  --dax-scrollbar: 40 40 40;
+  --dax-scrollbar-hover: 60 60 60;
+  --dax-badge: 50 50 50;
+  --dax-badge-fg: 180 180 180;
+  --dax-button: 180 80 0;
+  --dax-button-hover: 210 100 0;
+  --dax-button-secondary: 30 30 30;
+  --dax-button-secondary-hover: 40 40 40;
+  --dax-dropdown: 22 22 22;
+  --dax-dropdown-border: 40 40 40;
+  --dax-selection: 60 40 10;
+  --dax-node-trigger: 59 130 246;
+  --dax-node-processor: 168 85 247;
+  --dax-node-action: 34 197 94;
+  --dax-node-logic: 234 179 8;
+}
+
+/* ─── Base Resets ────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  color: rgb(var(--dax-text));
+  background: rgb(var(--dax-bg));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Dot Grid Background ────────────────────────────────── */
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(
+    rgb(var(--dax-text-dim) / 0.07) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--dax-scrollbar));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--dax-scrollbar-hover));
+}
+
+/* ─── Selection ──────────────────────────────────────────── */
+::selection {
+  background: rgb(var(--dax-accent) / 0.3);
+  color: rgb(var(--dax-text-bright));
+}
+
+/* ─── Title Bar Drag Region ──────────────────────────────── */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ─── Glass Effects ──────────────────────────────────────── */
+@layer utilities {
+  .glass {
+    background: rgb(var(--dax-card) / 0.55);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  .glass-subtle {
+    background: rgb(var(--dax-card) / 0.35);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    border: 1px solid rgb(255 255 255 / 0.06);
+  }
+
+  .glass-strong {
+    background: rgb(var(--dax-card) / 0.8);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgb(255 255 255 / 0.12);
+  }
+}
+
+/* ─── Card Styles ────────────────────────────────────────── */
+.agent-card {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 10px;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.agent-card:hover {
+  background: rgb(255 255 255 / 0.06);
+  border-color: rgb(255 255 255 / 0.14);
+}
+
+/* ─── Status Indicators ─────────────────────────────────── */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-running {
+  background: rgb(var(--dax-success));
+}
+
+.status-idle {
+  background: rgb(var(--dax-text-dim) / 0.4);
+}
+
+.status-error {
+  background: rgb(var(--dax-error));
+}
+
+.status-paused {
+  background: rgb(var(--dax-warning));
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-running {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ─── Nav Item ───────────────────────────────────────────── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  color: rgb(var(--dax-text-dim));
+  user-select: none;
+  position: relative;
+}
+
+.nav-item:hover {
+  background: rgb(var(--dax-list-hover));
+  color: rgb(var(--dax-text));
+}
+
+.nav-item.active {
+  background: rgb(var(--dax-accent) / 0.08);
+  color: rgb(var(--dax-accent));
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: rgb(var(--dax-accent));
+  border-radius: 0 3px 3px 0;
+}
+
+/* ─── Button Base ────────────────────────────────────────── */
+[class*="btn-"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1.4;
+}
+
+[class*="btn-"]:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+[class*="btn-"]:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ─── Button Variants ────────────────────────────────────── */
+.btn-primary {
+  background: rgb(var(--dax-button));
+  color: white;
+  border-color: rgb(var(--dax-button-hover) / 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: rgb(var(--dax-button-hover));
+  border-color: rgb(var(--dax-button-hover) / 0.5);
+}
+
+.btn-secondary {
+  background: rgb(var(--dax-card) / 0.6);
+  color: rgb(var(--dax-text));
+  border-color: rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgb(var(--dax-card-hover) / 0.8);
+  border-color: rgb(255 255 255 / 0.16);
+  color: rgb(var(--dax-text-bright));
+}
+
+.btn-danger {
+  background: rgb(var(--dax-error) / 0.15);
+  color: rgb(var(--dax-error));
+  border-color: rgb(var(--dax-error) / 0.25);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgb(var(--dax-error) / 0.25);
+  border-color: rgb(var(--dax-error) / 0.4);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: rgb(var(--dax-text-dim));
+  border-color: transparent;
+  padding: 5px 10px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(var(--dax-text));
+}
+
+/* ─── Button Sizes ───────────────────────────────────────── */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+  gap: 4px;
+  border-radius: 5px;
+}
+
+.btn-icon {
+  padding: 5px;
+  gap: 0;
+}
+
+/* ─── Input Styles ───────────────────────────────────────── */
+.input {
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  color: rgb(var(--dax-text));
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  width: 100%;
+}
+
+.input:focus {
+  border-color: rgb(var(--dax-input-focus) / 0.5);
+  background: rgb(255 255 255 / 0.08);
+}
+
+.input::placeholder {
+  color: rgb(var(--dax-text-dim) / 0.5);
+}
+
+/* ─── Node Styles (Workflow Builder) ─────────────────────── */
+.workflow-node {
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 180px;
+  cursor: grab;
+  transition: border-color 0.12s ease;
+  border: 1px solid transparent;
+}
+
+.workflow-node:active {
+  cursor: grabbing;
+}
+
+.workflow-node.trigger {
+  background: rgb(var(--dax-node-trigger) / 0.1);
+  border-color: rgb(var(--dax-node-trigger) / 0.3);
+}
+
+.workflow-node.processor {
+  background: rgb(var(--dax-node-processor) / 0.1);
+  border-color: rgb(var(--dax-node-processor) / 0.3);
+}
+
+.workflow-node.action {
+  background: rgb(var(--dax-node-action) / 0.1);
+  border-color: rgb(var(--dax-node-action) / 0.3);
+}
+
+.workflow-node.logic {
+  background: rgb(var(--dax-node-logic) / 0.1);
+  border-color: rgb(var(--dax-node-logic) / 0.3);
+}
+
+.workflow-node:hover {
+  border-color: rgb(var(--dax-accent) / 0.5);
+}
+
+/* ─── Modal & Overlay Styles ─────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-overlay {
+  animation: fadeIn 0.12s ease-out;
+}
+
+.modal-panel {
+  animation: slideUp 0.15s ease-out;
+}
+
+/* ─── Dropdown Styles ────────────────────────────────────── */
+.dropdown-menu {
+  animation: scaleIn 0.1s ease-out;
+  transform-origin: top right;
+}
+
+/* ─── Badge Styles ───────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.badge-success {
+  background: rgb(var(--dax-success) / 0.1);
+  color: rgb(var(--dax-success));
+}
+
+.badge-warning {
+  background: rgb(var(--dax-warning) / 0.1);
+  color: rgb(var(--dax-warning));
+}
+
+.badge-error {
+  background: rgb(var(--dax-error) / 0.1);
+  color: rgb(var(--dax-error));
+}
+
+.badge-neutral {
+  background: rgb(var(--dax-text-dim) / 0.1);
+  color: rgb(var(--dax-text-dim));
+}
+
+/* ─── Skeleton Loading ───────────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--dax-card) / 0.5) 25%,
+    rgb(var(--dax-card-border) / 0.3) 50%,
+    rgb(var(--dax-card) / 0.5) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ─── Transition Utilities ───────────────────────────────── */
+.transition-fast {
+  transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-normal {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-smooth {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(var(--dax-text-dim) / 0.2);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--dax-text-dim) / 0.35);
+}
+
+/* ─── Focus Visible ──────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgb(var(--dax-accent) / 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── React Flow Overrides ───────────────────────────────── */
+.react-flow__node {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+}
+
+.react-flow__node.selected {
+  box-shadow: none;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__controls {
+  background: rgb(var(--dax-panel));
+  border: 1px solid rgb(var(--dax-panel-border));
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
+
+.react-flow__controls button {
+  background: rgb(var(--dax-panel));
+  border-color: rgb(var(--dax-panel-border));
+  fill: rgb(var(--dax-text-dim));
+}
+
+.react-flow__controls button:hover {
+  background: rgb(var(--dax-card));
+  fill: rgb(var(--dax-text));
+}
+
+.wf-handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: 2px solid rgb(var(--dax-bg)) !important;
+  border-radius: 50% !important;
+}
+
+.wf-handle:hover {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: rgb(var(--dax-accent)) !important;
+}
+
+.react-flow__controls {
+  background: rgb(var(--dax-sidebar));
+  border: 1px solid rgb(var(--dax-border));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+
+.react-flow__controls-button {
+  background: transparent;
+  border-bottom: 1px solid rgb(var(--dax-border));
+  fill: rgb(var(--dax-text-dim));
+  color: rgb(var(--dax-text-dim));
+}
+
+.react-flow__controls-button:hover {
+  background: rgb(var(--dax-list-hover));
+}
+
+.react-flow__minimap {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.workflow-node.selected {
+  cursor: grab;
+}
