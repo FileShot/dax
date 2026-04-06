@@ -1,41 +1,63 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Bot, Zap, Clock, AlertTriangle, Play, Pause, ArrowRight,
   Activity, CheckCircle2, XCircle, Loader2, TrendingUp,
-  MessageSquarePlus, Download, Upload, FileText,
+  MessageSquarePlus, MessageSquare, Download, Upload, FileText,
+  Cpu, HardDrive, Server, Shield, ShieldAlert, ShieldCheck,
+  Box, Wifi, WifiOff, RefreshCw,
 } from 'lucide-react';
 import useRunStore from '../stores/useRunStore';
 import LiveActivityPanel from '../components/LiveActivityPanel';
+import OutputFilesPanel from '../components/OutputFilesPanel';
+import MetricsPanel from '../components/MetricsPanel';
+import HelpGuide from '../components/HelpGuide';
 import Sparkline from '../components/Sparkline';
 
-export default function DashboardView({ onNavigate }) {
+export default function DashboardView({ onNavigate, onOpenChat }) {
   const [agents, setAgents] = useState([]);
   const [recentRuns, setRecentRuns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sysInfo, setSysInfo] = useState(null);
+  const [circuits, setCircuits] = useState(null);
+  const [models, setModels] = useState([]);
+  const [scheduler, setScheduler] = useState(null);
   const liveRuns = useRunStore((s) => s.liveRuns);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!window.dax) return;
     try {
-      const [agentList, runList] = await Promise.all([
+      const [agentList, runList, sys, circ, modelList, sched] = await Promise.all([
         window.dax.agents.list(),
         window.dax.runs.list(null, 20),
+        window.dax.system?.info?.().catch(() => null),
+        window.dax.health?.circuitStatus?.().catch(() => null),
+        window.dax.models?.list?.().catch(() => []),
+        window.dax.engine?.scheduler?.().catch(() => null),
       ]);
       setAgents(agentList || []);
       setRecentRuns(runList || []);
+      setSysInfo(sys);
+      setCircuits(circ);
+      setModels(modelList || []);
+      setScheduler(sched);
     } catch (err) {
       console.error('[Dashboard] Fetch error:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refresh();
     const off1 = window.dax?.on?.runCompleted?.(refresh);
     const off2 = window.dax?.on?.runStarted?.(refresh);
-    return () => { off1?.(); off2?.(); };
-  }, []);
+    // Refresh system info every 30s
+    const sysInterval = setInterval(async () => {
+      const sys = await window.dax?.system?.info?.().catch(() => null);
+      if (sys) setSysInfo(sys);
+    }, 30000);
+    return () => { off1?.(); off2?.(); clearInterval(sysInterval); };
+  }, [refresh]);
 
   // Build agent name map for run display
   const agentMap = useMemo(() => {
@@ -66,11 +88,11 @@ export default function DashboardView({ onNavigate }) {
   }, [recentRuns]);
 
   const stats = [
-    { label: 'Total Agents', value: agents.length, icon: Bot, accent: '--dax-accent', spark: null },
-    { label: 'Active', value: activeCount, icon: Zap, accent: '--dax-success', spark: null },
-    { label: 'Recent Runs', value: recentRuns.length, icon: Clock, accent: '--dax-info', spark: sparklineData.durations, sparkColor: 'rgb(var(--dax-info))' },
-    { label: 'Success Rate', value: recentRuns.length > 0 ? `${successRate}%` : '--', icon: TrendingUp, accent: '--dax-success', spark: sparklineData.success, sparkColor: 'rgb(var(--dax-success))' },
-    { label: 'Errors', value: errorRuns, icon: AlertTriangle, accent: '--dax-error', spark: sparklineData.errors, sparkColor: 'rgb(var(--dax-error))' },
+    { label: 'Total Agents', value: agents.length, icon: Bot, accent: '--dax-accent', spark: null, nav: 'agents' },
+    { label: 'Active', value: activeCount, icon: Zap, accent: '--dax-success', spark: null, nav: 'agents' },
+    { label: 'Recent Runs', value: recentRuns.length, icon: Clock, accent: '--dax-info', spark: sparklineData.durations, sparkColor: 'rgb(var(--dax-info))', nav: 'history' },
+    { label: 'Success Rate', value: recentRuns.length > 0 ? `${successRate}%` : '--', icon: TrendingUp, accent: '--dax-success', spark: sparklineData.success, sparkColor: 'rgb(var(--dax-success))', nav: 'history' },
+    { label: 'Errors', value: errorRuns, icon: AlertTriangle, accent: '--dax-error', spark: sparklineData.errors, sparkColor: 'rgb(var(--dax-error))', nav: 'history' },
   ];
 
   if (loading) {
@@ -93,6 +115,14 @@ export default function DashboardView({ onNavigate }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <HelpGuide page="dashboard" />
+          <button
+            className="btn-primary btn-sm"
+            onClick={() => onOpenChat?.()}
+          >
+            <MessageSquare size={14} />
+            Chat with Dax
+          </button>
           <button
             className="btn-primary btn-sm"
             onClick={() => onNavigate?.('agents')}
@@ -105,15 +135,19 @@ export default function DashboardView({ onNavigate }) {
             onClick={() => onNavigate?.('builder')}
           >
             <MessageSquarePlus size={14} />
-            Chat Builder
+            Agent Creator
           </button>
         </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-5 gap-3 mb-6">
-        {stats.map(({ label, value, icon: Icon, accent, spark, sparkColor }) => (
-          <div key={label} className="agent-card p-4">
+        {stats.map(({ label, value, icon: Icon, accent, spark, sparkColor, nav }) => (
+          <div
+            key={label}
+            className="agent-card p-4 cursor-pointer hover:ring-1 hover:ring-dax-accent/30 transition-all"
+            onClick={() => onNavigate?.(nav)}
+          >
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] text-dax-text-dim uppercase tracking-wider font-medium">
                 {label}
@@ -230,6 +264,155 @@ export default function DashboardView({ onNavigate }) {
         )}
       </div>
 
+      {/* System & Health Row */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {/* System Resources */}
+        <div className="agent-card p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Server size={14} className="text-dax-accent" />
+            <h2 className="text-sm font-medium text-dax-text-bright">System</h2>
+          </div>
+          {sysInfo ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-dax-text-dim flex items-center gap-1.5">
+                  <Cpu size={10} /> CPU
+                </span>
+                <span className="text-[11px] text-dax-text-bright font-mono">{sysInfo.cpus} cores · {sysInfo.arch}</span>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-dax-text-dim flex items-center gap-1.5">
+                    <HardDrive size={10} /> RAM
+                  </span>
+                  <span className="text-[11px] text-dax-text-bright font-mono">
+                    {formatBytes(sysInfo.totalMemory - (sysInfo.freeMemory || 0))} / {formatBytes(sysInfo.totalMemory)}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-dax-surface overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.round(((sysInfo.totalMemory - (sysInfo.freeMemory || 0)) / sysInfo.totalMemory) * 100)}%`,
+                      background: `rgb(var(${((sysInfo.totalMemory - (sysInfo.freeMemory || 0)) / sysInfo.totalMemory) > 0.85 ? '--dax-error' : '--dax-accent'}))`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-dax-text-dim">Platform</span>
+                <span className="text-[11px] text-dax-text-bright font-mono">{sysInfo.platform} · Node {sysInfo.nodeVersion}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[10px] text-dax-text-dim">Loading...</p>
+          )}
+        </div>
+
+        {/* Models Status */}
+        <div className="agent-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Box size={14} className="text-dax-accent" />
+              <h2 className="text-sm font-medium text-dax-text-bright">Models</h2>
+            </div>
+            <button
+              onClick={() => onNavigate?.('models')}
+              className="text-[10px] text-dax-accent hover:underline"
+            >
+              Manage
+            </button>
+          </div>
+          {models.length === 0 ? (
+            <div className="text-center py-2">
+              <Box size={16} className="text-dax-text-dim mx-auto mb-1.5 opacity-30" />
+              <p className="text-[10px] text-dax-text-dim">No models configured</p>
+              <button
+                onClick={() => onNavigate?.('models')}
+                className="text-[10px] text-dax-accent hover:underline mt-1"
+              >
+                Add a model
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {models.slice(0, 4).map((m) => (
+                <div key={m.id} className="flex items-center gap-2 p-1.5 rounded bg-dax-surface/40">
+                  <div className="status-dot status-running shrink-0" />
+                  <span className="text-[11px] text-dax-text-bright truncate flex-1">{m.name}</span>
+                  <span className="text-[9px] text-dax-text-dim">{m.provider}</span>
+                </div>
+              ))}
+              {models.length > 4 && (
+                <p className="text-[9px] text-dax-text-dim text-center">+{models.length - 4} more</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Integration Health */}
+        <div className="agent-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Shield size={14} className="text-dax-accent" />
+              <h2 className="text-sm font-medium text-dax-text-bright">Integrations</h2>
+            </div>
+            <button
+              onClick={() => onNavigate?.('integrations')}
+              className="text-[10px] text-dax-accent hover:underline"
+            >
+              View all
+            </button>
+          </div>
+          {circuits && Object.keys(circuits).length > 0 ? (
+            <div className="space-y-1.5">
+              {Object.entries(circuits).slice(0, 5).map(([name, info]) => (
+                <div key={name} className="flex items-center gap-2 p-1.5 rounded bg-dax-surface/40">
+                  {info.state === 'CLOSED' ? (
+                    <ShieldCheck size={12} className="text-dax-success shrink-0" />
+                  ) : info.state === 'HALF_OPEN' ? (
+                    <ShieldAlert size={12} className="text-dax-warning shrink-0" />
+                  ) : (
+                    <ShieldAlert size={12} className="text-dax-error shrink-0" />
+                  )}
+                  <span className="text-[11px] text-dax-text-bright truncate flex-1">{name}</span>
+                  <span className={`text-[9px] font-mono ${info.state === 'CLOSED' ? 'text-dax-success' : info.state === 'HALF_OPEN' ? 'text-dax-warning' : 'text-dax-error'}`}>
+                    {info.state === 'CLOSED' ? 'OK' : info.state === 'HALF_OPEN' ? 'RECOVERING' : 'DOWN'}
+                  </span>
+                </div>
+              ))}
+              {Object.keys(circuits).length > 5 && (
+                <p className="text-[9px] text-dax-text-dim text-center">+{Object.keys(circuits).length - 5} more</p>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-2">
+              <Wifi size={16} className="text-dax-text-dim mx-auto mb-1.5 opacity-30" />
+              <p className="text-[10px] text-dax-text-dim">No active circuits</p>
+              <p className="text-[9px] text-dax-text-dim mt-0.5 opacity-60">Circuits appear when integrations are used</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Scheduler Status */}
+      {scheduler && (
+        <div className="agent-card p-3 mb-6 flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <RefreshCw size={13} className="text-dax-accent" />
+            <span className="text-[11px] text-dax-text-bright font-medium">Scheduler</span>
+          </div>
+          <span className="text-[10px] text-dax-text-dim">
+            {scheduler.scheduled || 0} scheduled · {scheduler.running || 0} running
+          </span>
+          {scheduler.nextRun && (
+            <span className="text-[10px] text-dax-text-dim">
+              Next: {formatTimeAgo(scheduler.nextRun)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Three-panel row: Live | Latest Results | Recent */}
       <div className="grid grid-cols-3 gap-4">
         {/* Live Activity */}
@@ -340,6 +523,12 @@ export default function DashboardView({ onNavigate }) {
           )}
         </div>
       </div>
+
+      {/* Service Metrics */}
+      <MetricsPanel />
+
+      {/* Output Files */}
+      <OutputFilesPanel />
     </div>
   );
 }
@@ -380,4 +569,11 @@ function formatDuration(ms) {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }

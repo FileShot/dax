@@ -4,6 +4,7 @@ import {
   MessageSquare, MessageCircle, Table, Database, Server,
   Eye, EyeOff, TestTube, X, Plus, ExternalLink, KeyRound,
 } from 'lucide-react';
+import HelpGuide from '../components/HelpGuide';
 
 const CATEGORY_ICONS = {
   communication: MessageSquare,
@@ -70,10 +71,13 @@ export default function IntegrationsView() {
             Connect Dax to external services, MCP servers, and databases
           </p>
         </div>
-        <button onClick={refresh} className="btn-secondary btn-sm">
-          <RefreshCw size={12} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <HelpGuide page="integrations" />
+          <button onClick={refresh} className="btn-secondary btn-sm">
+            <RefreshCw size={12} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}

@@ -55,6 +55,9 @@ let _requestId = 0;
 // All connected WebSocket clients
 const _wsClients = new Set();
 
+// Static file cache — avoids re-reading unchanged assets from disk
+const _staticCache = new Map();
+
 function startService() {
   const servicePath = path.join(__dirname, 'agent-service.js');
   log('info', 'SERVICE', 'Forking agent service', { path: servicePath });
@@ -95,7 +98,7 @@ function startService() {
     }
 
     // Broadcast events to all connected WebSocket clients
-    if (['run-started', 'run-completed', 'run-step'].includes(type)) {
+    if (['run-started', 'run-completed', 'run-step', 'llm-token', 'model-download-progress'].includes(type)) {
       broadcast({ type: 'event', event: type, data: rest });
     }
   });
@@ -120,7 +123,7 @@ function startService() {
 }
 
 // Commands that involve LLM inference get a longer timeout
-const LONG_TIMEOUT_CMDS = new Set(['agent-run', 'crews-run', 'mcp-call-tool']);
+const LONG_TIMEOUT_CMDS = new Set(['agent-run', 'crews-run', 'mcp-call-tool', 'chat-message']);
 
 function serviceCall(cmd, ...args) {
   return new Promise((resolve, reject) => {
@@ -179,6 +182,8 @@ function buildHandlers() {
   proxy('models-list');
   proxy('models-add');
   proxy('models-delete');
+  proxy('models-search-hf');
+  proxy('models-download');
 
   handlers['models-scan-local'] = async () => {
     const files = [];
@@ -197,6 +202,19 @@ function buildHandlers() {
   // ── Scheduler / Tools ──
   proxy('scheduler-status');
   proxy('tools-list');
+
+  // ── Chat ──
+  proxy('chat-message');
+  proxy('chat-history-list');
+  proxy('chat-history-save');
+  proxy('chat-history-clear');
+
+  // ── Output Files ──
+  proxy('output-files-list');
+  proxy('output-files-read');
+
+  // ── Metrics ──
+  proxy('get-metrics');
 
   // ── Integrations ──
   proxy('integrations-list');
@@ -373,7 +391,15 @@ const server = http.createServer((req, res) => {
   const contentType = MIME[ext] || 'application/octet-stream';
 
   try {
-    const content = fs.readFileSync(filePath);
+    // Use cached content for static assets; skip cache for index.html (SPA, may change)
+    let content;
+    const isIndexHtml = filePath.endsWith('index.html');
+    if (!isIndexHtml && _staticCache.has(filePath)) {
+      content = _staticCache.get(filePath);
+    } else {
+      content = fs.readFileSync(filePath);
+      if (!isIndexHtml) _staticCache.set(filePath, content);
+    }
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(content);
   } catch (err) {

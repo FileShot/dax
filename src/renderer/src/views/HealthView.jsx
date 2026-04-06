@@ -3,6 +3,7 @@ import {
   Activity, RefreshCw, CheckCircle2, XCircle, AlertTriangle,
   Loader2, Shield, ShieldAlert, ShieldCheck, Zap, Clock,
 } from 'lucide-react';
+import HelpGuide from '../components/HelpGuide';
 
 const CIRCUIT_LABELS = { closed: 'Healthy', open: 'Circuit Open', half_open: 'Recovering' };
 const CIRCUIT_COLORS = {
@@ -118,10 +119,13 @@ export default function HealthView() {
             )}
           </p>
         </div>
-        <button className="btn-secondary btn-sm" onClick={refresh}>
-          <RefreshCw size={14} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <HelpGuide page="health" />
+          <button className="btn-secondary btn-sm" onClick={refresh}>
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

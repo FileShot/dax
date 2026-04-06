@@ -8,21 +8,24 @@ import {
   Settings,
   Zap,
   MessageSquarePlus,
+  MessageSquare,
   Plug,
   Mic,
   ChevronLeft,
   Users,
   Database,
   Activity,
+  Box,
 } from 'lucide-react';
 
 const navItems = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { id: 'agents', icon: Bot, label: 'Agents' },
   { id: 'crews', icon: Users, label: 'Crews' },
+  { id: 'models', icon: Box, label: 'Models' },
   { id: 'knowledge', icon: Database, label: 'Knowledge' },
   { id: 'builder', icon: GitBranch, label: 'Builder' },
-  { id: 'chat-builder', icon: MessageSquarePlus, label: 'Chat Builder' },
+  { id: 'chat-builder', icon: MessageSquarePlus, label: 'Agent Creator' },
   { id: 'integrations', icon: Plug, label: 'Integrations' },
   { id: 'health', icon: Activity, label: 'Health' },
   { id: 'voice-plugins', icon: Mic, label: 'Voice & Plugins' },
@@ -31,7 +34,7 @@ const navItems = [
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 
-export default function Sidebar({ activeView, onViewChange }) {
+export default function Sidebar({ activeView, onViewChange, chatOpen, onToggleChat }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -80,7 +83,21 @@ export default function Sidebar({ activeView, onViewChange }) {
       </nav>
 
       {/* Bottom Section */}
-      <div className="p-2 border-t border-dax-panel-border/50">
+      <div className="p-2 border-t border-dax-panel-border/50 space-y-0.5">
+        <button
+          onClick={onToggleChat}
+          className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-fast w-full ${
+            chatOpen
+              ? 'bg-dax-accent/10 text-dax-accent'
+              : 'text-dax-text-dim hover:bg-dax-list-hover hover:text-dax-text'
+          }`}
+          title={collapsed ? (chatOpen ? 'Close Chat' : 'Open Chat') : undefined}
+        >
+          <MessageSquare size={18} />
+          {!collapsed && (
+            <span className="text-[13px] font-medium">Chat</span>
+          )}
+        </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-dax-text-dim hover:bg-dax-list-hover hover:text-dax-text transition-fast w-full"

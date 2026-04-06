@@ -68,7 +68,7 @@ async function executeAgent(agentConfig, triggerData = {}, { dbAll, dbGet, dbRun
 
       // Resolve LLM config for workflow AI nodes
       const modelId = agentConfig.model_id || '';
-      let llmConfig = { baseUrl: 'http://localhost:11434/v1', defaultModel: 'llama3' };
+      let llmConfig = { baseUrl: 'http://localhost:11434/v1', defaultModel: '' };
       if (modelId) {
         const model = dbGet(db, 'SELECT * FROM models WHERE id = ?', [modelId]);
         if (model) {
@@ -116,7 +116,7 @@ async function executeAgent(agentConfig, triggerData = {}, { dbAll, dbGet, dbRun
     const modelId = agentConfig.model_id || '';
 
     // Resolve model configuration
-    let llmConfig = { baseUrl: 'http://localhost:11434/v1', defaultModel: 'llama3' };
+    let llmConfig = { baseUrl: 'http://localhost:11434/v1', defaultModel: '' };
     if (modelId) {
       const model = dbGet(db, 'SELECT * FROM models WHERE id = ?', [modelId]);
       if (model) {

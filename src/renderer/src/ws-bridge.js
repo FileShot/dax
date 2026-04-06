@@ -216,6 +216,9 @@ export function initWebSocketBridge() {
       scanLocal: () => _invoke('models-scan-local'),
       add:       (model) => _invoke('models-add', model),
       delete:    (id) => _invoke('models-delete', id),
+      searchHF:  (opts) => _invoke('models-search-hf', opts),
+      download:  (opts) => _invoke('models-download', opts),
+      onDownloadProgress: (cb) => _on('model-download-progress', cb),
     },
 
     settings: {
@@ -244,6 +247,22 @@ export function initWebSocketBridge() {
       selectFile:  () => _invoke('kb-select-file'),
     },
 
+    chat: {
+      send: (data) => _invoke('chat-message', data),
+      historyList: (limit) => _invoke('chat-history-list', limit),
+      historySave: (msg) => _invoke('chat-history-save', msg),
+      historyClear: () => _invoke('chat-history-clear'),
+    },
+
+    outputFiles: {
+      list: () => _invoke('output-files-list'),
+      read: (name) => _invoke('output-files-read', name),
+    },
+
+    metrics: {
+      get: () => _invoke('get-metrics'),
+    },
+
     on: {
       runStarted:      (cb) => _on('run-started', cb),
       runCompleted:    (cb) => _on('run-completed', cb),
@@ -252,6 +271,7 @@ export function initWebSocketBridge() {
       agentsResumeAll: (cb) => _on('agents-resume-all', cb),
       agentRunUpdate:  (cb) => _on('agent-run-update', cb),
       modelLoaded:     (cb) => _on('model-loaded', cb),
+      llmToken:        (cb) => _on('llm-token', cb),
     },
   };
 }

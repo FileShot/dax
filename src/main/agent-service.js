@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
+const metrics = require('./engine/metrics');
 
 // ─── Paths ──────────────────────────────────────────────────
 const USER_DATA = process.env.DAX_USER_DATA || path.join(
@@ -29,13 +30,57 @@ for (const dir of [USER_DATA, LOG_DIR, MODELS_DIR, PLUGINS_DIR]) {
 
 // ─── Logging ────────────────────────────────────────────────
 const LOG_FILE = path.join(LOG_DIR, `dax-service-${new Date().toISOString().slice(0, 10)}.log`);
+const LOG_MAX_AGE_DAYS = 7;
+const LOG_MAX_TOTAL_BYTES = 50 * 1024 * 1024; // 50 MB
+
+function rotateLogs() {
+  try {
+    const files = fs.readdirSync(LOG_DIR)
+      .filter(f => f.startsWith('dax-') && f.endsWith('.log'))
+      .map(f => ({ name: f, path: path.join(LOG_DIR, f), stat: fs.statSync(path.join(LOG_DIR, f)) }))
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    const cutoff = Date.now() - LOG_MAX_AGE_DAYS * 86400000;
+    let totalSize = 0;
+    for (const f of files) {
+      totalSize += f.stat.size;
+      if (f.stat.mtimeMs < cutoff || totalSize > LOG_MAX_TOTAL_BYTES) {
+        try { fs.unlinkSync(f.path); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+rotateLogs();
+
+// Batched async log writer — flushes every 200ms instead of sync per-line
+let _logBuffer = [];
+let _logFlushTimer = null;
+
+function _flushLogs() {
+  if (_logBuffer.length === 0) return;
+  const batch = _logBuffer.join('');
+  _logBuffer = [];
+  _logFlushTimer = null;
+  fs.appendFile(LOG_FILE, batch, () => {});
+}
+
+function _flushLogsSync() {
+  if (_logBuffer.length === 0) return;
+  try { fs.appendFileSync(LOG_FILE, _logBuffer.join('')); } catch (_) {}
+  _logBuffer = [];
+  if (_logFlushTimer) { clearTimeout(_logFlushTimer); _logFlushTimer = null; }
+}
 
 function log(level, category, message, data = null) {
   const timestamp = new Date().toISOString();
   const entry = `[${timestamp}] [${level.toUpperCase()}] [${category}] ${message}${data ? ' | ' + JSON.stringify(data) : ''}`;
   if (level === 'error') console.error(entry);
   else console.log(entry);
-  try { fs.appendFileSync(LOG_FILE, entry + '\n'); } catch (_) {}
+
+  _logBuffer.push(entry + '\n');
+  if (!_logFlushTimer) {
+    _logFlushTimer = setTimeout(_flushLogs, 200);
+  }
 
   // Forward logs to parent if connected
   sendToParent('log', { level, category, message, data });
@@ -61,6 +106,37 @@ process.on('unhandledRejection', (reason) => {
 // ─── Database ───────────────────────────────────────────────
 let _db = null;
 let _SQL = null;
+const BACKUP_DIR = path.join(USER_DATA, 'backups');
+const BACKUP_MAX_COUNT = 5;
+
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+function backupDb() {
+  if (!fs.existsSync(DB_PATH)) return;
+  try {
+    // Flush any pending writes before backup
+    if (_db && _saveTimer) saveDbSync();
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(BACKUP_DIR, `dax-${ts}.db`);
+    fs.copyFileSync(DB_PATH, dest);
+    log('info', 'DB', 'Backup created', { path: dest });
+
+    // Prune old backups
+    const backups = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('dax-') && f.endsWith('.db'))
+      .map(f => ({ name: f, path: path.join(BACKUP_DIR, f), mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const old of backups.slice(BACKUP_MAX_COUNT)) {
+      try { fs.unlinkSync(old.path); } catch (_) {}
+    }
+  } catch (err) {
+    log('error', 'DB', 'Backup failed', { error: err.message });
+  }
+}
+
+// Backup on startup + every 24h
+backupDb();
+setInterval(backupDb, 24 * 60 * 60 * 1000);
 
 async function initDb() {
   const initSqlJs = require('sql.js');
@@ -79,21 +155,40 @@ async function initDb() {
   return _db;
 }
 
-function saveDb() {
-  if (_db) {
+let _saveTimer = null;
+let _saving = false;
+
+function _flushDb() {
+  if (!_db) return;
+  _saving = true;
+  try {
     const data = _db.export();
     const tempPath = `${DB_PATH}.tmp`;
+    fs.writeFileSync(tempPath, Buffer.from(data));
+    fs.renameSync(tempPath, DB_PATH);
+  } catch (err) {
     try {
-      fs.writeFileSync(tempPath, Buffer.from(data));
-      fs.renameSync(tempPath, DB_PATH);
-    } catch (err) {
-      try {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      } catch (_) {}
-      log('error', 'DB', 'Failed to persist database', { path: DB_PATH, error: err.message });
-      throw new Error(`Failed to persist database: ${err.message}`);
-    }
+      if (fs.existsSync(`${DB_PATH}.tmp`)) fs.unlinkSync(`${DB_PATH}.tmp`);
+    } catch (_) {}
+    log('error', 'DB', 'Failed to persist database', { path: DB_PATH, error: err.message });
+  } finally {
+    _saving = false;
   }
+}
+
+function saveDb() {
+  // Debounce: coalesce rapid writes into one flush every 500ms
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    _flushDb();
+  }, 500);
+}
+
+// Force immediate save (for shutdown, backup, export)
+function saveDbSync() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  _flushDb();
 }
 
 function dbAll(db, sql, params = []) {
@@ -236,13 +331,47 @@ function initSchema(db) {
       FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_kb_docs_kb ON kb_documents(kb_id);
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ts TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_messages(ts);
+
+    CREATE TABLE IF NOT EXISTS _migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
-  // Add webhook_token column if not exists (migration)
+  // ─── Versioned Migrations ──────────────────────────────────
+  const migrations = [
+    { version: 1, name: 'add_webhook_token', up: () => {
+      try { db.run("ALTER TABLE agents ADD COLUMN webhook_token TEXT"); } catch (_) {}
+    }},
+    // Add new migrations here with incrementing version numbers:
+    // { version: 2, name: 'add_some_column', up: () => { db.run("ALTER TABLE ..."); }},
+  ];
+
+  let currentVersion = 0;
   try {
-    db.run("SELECT webhook_token FROM agents LIMIT 1");
-  } catch (_) {
-    try { db.run("ALTER TABLE agents ADD COLUMN webhook_token TEXT"); } catch (_) {}
+    const row = dbGet(db, 'SELECT MAX(version) as v FROM _migrations');
+    if (row && row.v != null) currentVersion = row.v;
+  } catch (_) {}
+
+  for (const m of migrations) {
+    if (m.version <= currentVersion) continue;
+    try {
+      m.up();
+      db.run('INSERT INTO _migrations (version, name) VALUES (?, ?)', [m.version, m.name]);
+      log('info', 'DB', `Migration ${m.version} applied: ${m.name}`);
+    } catch (err) {
+      log('error', 'DB', `Migration ${m.version} failed: ${m.name}`, { error: err.message });
+      throw new Error(`DB migration ${m.version} (${m.name}) failed: ${err.message}`);
+    }
   }
 
   saveDb();
@@ -289,10 +418,24 @@ for (const file of fs.readdirSync(_integrationsDir)) {
 // Engine helpers
 const engineHelpers = { dbAll, dbGet, dbRun, getDb, log };
 
-// Forward run events to parent
-runnerEvents.on('run-started',  (data) => sendToParent('run-started',  data));
-runnerEvents.on('run-completed', (data) => sendToParent('run-completed', data));
-runnerEvents.on('run-step',      (data) => sendToParent('run-step',      data));
+// Forward run events to parent + track metrics
+runnerEvents.on('run-started', (data) => {
+  metrics.increment('runs_started');
+  metrics.gauge('active_runs', getActiveRuns().length);
+  sendToParent('run-started', data);
+});
+runnerEvents.on('run-completed', (data) => {
+  metrics.increment('runs_completed');
+  if (data.status === 'error') metrics.increment('runs_errored');
+  if (data.duration_ms) metrics.observe('run_duration_ms', data.duration_ms);
+  if (data.tokens_used) metrics.increment('tokens_used', data.tokens_used);
+  metrics.gauge('active_runs', getActiveRuns().length);
+  sendToParent('run-completed', data);
+});
+runnerEvents.on('run-step', (data) => {
+  metrics.increment('run_steps');
+  sendToParent('run-step', data);
+});
 
 // ─── Webhook Server ─────────────────────────────────────────
 let _webhookServer = null;
@@ -304,29 +447,51 @@ function startWebhookServer(port = 3700, bindAddress = '127.0.0.1') {
   if (_webhookServer) return;
 
   _webhookServer = http.createServer(async (req, res) => {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // No CORS headers — webhooks are server-to-server calls, not browser requests.
+    // If a browser origin is needed, configure an explicit allowlist instead of '*'.
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    // Health endpoint
+    // Health endpoint (no PID — avoids fingerprinting)
     if (url.pathname === '/health' && req.method === 'GET') {
+      const mem = process.memoryUsage();
+      let dbSizeBytes = 0;
+      try { dbSizeBytes = fs.statSync(DB_PATH).size; } catch (_) {}
+      let agentCounts = { total: 0, enabled: 0, scheduled: 0 };
+      try {
+        const db = await getDb();
+        agentCounts.total = (dbGet(db, 'SELECT COUNT(*) as c FROM agents') || {}).c || 0;
+        agentCounts.enabled = (dbGet(db, 'SELECT COUNT(*) as c FROM agents WHERE enabled = 1') || {}).c || 0;
+        agentCounts.scheduled = (dbGet(db, "SELECT COUNT(*) as c FROM agents WHERE enabled = 1 AND trigger_type = 'schedule'") || {}).c || 0;
+      } catch (_) {}
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        uptime: process.uptime(),
+        uptime: Math.floor(process.uptime()),
         agents_running: getActiveRuns().length,
-        pid: process.pid,
+        agents: agentCounts,
+        memory: {
+          rss: mem.rss,
+          heapUsed: mem.heapUsed,
+          heapTotal: mem.heapTotal,
+        },
+        db_size_bytes: dbSizeBytes,
       }));
+      return;
+    }
+
+    // Metrics endpoint — detailed counters, gauges, histograms
+    if (url.pathname === '/metrics' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(metrics.getAll()));
       return;
     }
 
     // Webhook endpoint: POST /webhook/:agentId/:token
     const webhookMatch = url.pathname.match(/^\/webhook\/([^/]+)\/([^/]+)$/);
     if (webhookMatch && req.method === 'POST') {
+      metrics.increment('webhook_requests');
       const [, agentId, token] = webhookMatch;
 
       // Rate limiting
@@ -451,10 +616,14 @@ let _heartbeatInterval = null;
 
 function startHeartbeat() {
   _heartbeatInterval = setInterval(() => {
+    const mem = process.memoryUsage();
+    metrics.gauge('memory_rss', mem.rss);
+    metrics.gauge('memory_heap_used', mem.heapUsed);
+    metrics.gauge('active_runs', getActiveRuns().length);
     sendToParent('heartbeat', {
       pid: process.pid,
       uptime: process.uptime(),
-      memory: process.memoryUsage().heapUsed,
+      memory: mem.heapUsed,
       activeRuns: getActiveRuns().length,
       schedulerStatus: scheduler.getStatus(),
     });
@@ -486,8 +655,12 @@ async function handleMessage(msg) {
   }
 
   const { id, cmd, args } = msg;
+  const _ipcStart = Date.now();
   let result = null;
   let error = null;
+
+  metrics.increment('ipc_calls');
+  metrics.increment(`ipc.${cmd}`);
 
   try {
     switch (cmd) {
@@ -564,6 +737,7 @@ async function handleMessage(msg) {
         const db = await getDb();
         dbRun(db, "UPDATE agents SET enabled = NOT enabled, updated_at = datetime('now') WHERE id = ?", [args[0]]);
         result = dbGet(db, 'SELECT * FROM agents WHERE id = ?', [args[0]]);
+        log('info', 'SERVICE', `Toggle agent: ${args[0]}`, { enabled: result?.enabled, name: result?.name });
         // Re-evaluate scheduling
         if (result && result.enabled) {
           scheduler.scheduleAgent(result);
@@ -617,6 +791,95 @@ async function handleMessage(msg) {
         result = scheduler.getStatus();
         break;
       }
+      case 'output-files-list': {
+        const _fs = require('fs');
+        const _path = require('path');
+        const outputDir = _path.join(process.cwd(), 'test-output');
+        try {
+          if (!_fs.existsSync(outputDir)) { result = []; break; }
+          const entries = _fs.readdirSync(outputDir, { withFileTypes: true });
+          result = entries
+            .filter(e => e.isFile())
+            .map(e => {
+              const stat = _fs.statSync(_path.join(outputDir, e.name));
+              return { name: e.name, size: stat.size, modified: stat.mtime.toISOString() };
+            })
+            .sort((a, b) => new Date(b.modified) - new Date(a.modified));
+        } catch (err) { result = []; }
+        break;
+      }
+      case 'output-files-read': {
+        const _fs2 = require('fs');
+        const _path2 = require('path');
+        const [fileName] = args;
+        const outputDir2 = _path2.join(process.cwd(), 'test-output');
+        const filePath = _path2.join(outputDir2, _path2.basename(String(fileName)));
+        // Prevent path traversal
+        if (!filePath.startsWith(outputDir2)) { result = { error: 'Invalid path' }; break; }
+        try {
+          const content = _fs2.readFileSync(filePath, 'utf-8');
+          result = { name: fileName, content, size: Buffer.byteLength(content) };
+        } catch (err) { result = { error: err.message }; }
+        break;
+      }
+      case 'chat-message': {
+        // Ephemeral LLM chat — no DB record, supports token streaming
+        const { createClient: _createClient } = require('./engine/llm-client');
+        const [chatArgs] = args;
+        const { messages: chatMessages, model: chatModelId, system: chatSystem } = chatArgs || {};
+
+        // Resolve model config: use provided model ID → fallback to first model in DB → fallback to Ollama
+        const db = await getDb();
+        let _llmCfg = { baseUrl: 'http://localhost:11434/v1', defaultModel: '' };
+        const _rawModelId = chatModelId || null;
+        if (_rawModelId) {
+          const _m = dbGet(db, 'SELECT * FROM models WHERE id = ? OR name = ?', [_rawModelId, _rawModelId]);
+          if (_m) {
+            _llmCfg = { baseUrl: _m.model_path || _llmCfg.baseUrl, apiKey: _m.api_key_encrypted || '', defaultModel: _m.name };
+          }
+        } else {
+          const _first = dbGet(db, 'SELECT * FROM models ORDER BY created_at ASC LIMIT 1');
+          if (_first) {
+            _llmCfg = { baseUrl: _first.model_path || _llmCfg.baseUrl, apiKey: _first.api_key_encrypted || '', defaultModel: _first.name };
+          }
+        }
+
+        const _llm = _createClient(_llmCfg);
+        const _builtMessages = [];
+        if (chatSystem) _builtMessages.push({ role: 'system', content: chatSystem });
+        if (Array.isArray(chatMessages)) _builtMessages.push(...chatMessages);
+
+        const _streamResult = await _llm.chatCompletionStream({
+          messages: _builtMessages,
+          onToken: (token) => sendToParent('llm-token', { token }),
+        });
+        result = { content: _streamResult.content, usage: _streamResult.usage };
+        break;
+      }
+
+      // ─── Chat History ──────────────────
+      case 'chat-history-list': {
+        const db = await getDb();
+        const limit = args[0] || 200;
+        result = dbAll(db, 'SELECT * FROM chat_messages ORDER BY ts ASC LIMIT ?', [limit]);
+        break;
+      }
+      case 'chat-history-save': {
+        const db = await getDb();
+        const msg = args[0];
+        if (!msg || !msg.role || !msg.content) { result = { error: 'Invalid message' }; break; }
+        const msgId = msg.id || crypto.randomUUID();
+        dbRun(db, 'INSERT OR REPLACE INTO chat_messages (id, role, content, ts) VALUES (?, ?, ?, ?)',
+          [String(msgId), msg.role, msg.content, msg.ts || new Date().toISOString()]);
+        result = { id: msgId };
+        break;
+      }
+      case 'chat-history-clear': {
+        const db = await getDb();
+        dbRun(db, 'DELETE FROM chat_messages');
+        result = { success: true };
+        break;
+      }
 
       // ─── Models ─────────────────────
       case 'models-list': {
@@ -651,6 +914,122 @@ async function handleMessage(msg) {
         const db = await getDb();
         dbRun(db, 'DELETE FROM models WHERE id = ?', [args[0]]);
         result = { success: true };
+        break;
+      }
+
+      case 'models-search-hf': {
+        // Search HuggingFace for GGUF models
+        const { query: hfQuery, limit: hfLimit } = args[0] || {};
+        const searchQ = encodeURIComponent(hfQuery || 'gguf');
+        const maxResults = Math.min(hfLimit || 20, 50);
+        const hfUrl = `https://huggingface.co/api/models?search=${searchQ}&filter=gguf&sort=downloads&direction=-1&limit=${maxResults}&expand[]=siblings&expand[]=likes&expand[]=tags&expand[]=lastModified`;
+
+        const hfFetch = (url) => new Promise((resolve, reject) => {
+          const hfReq = require('https').get(url, { headers: { 'User-Agent': 'Dax/1.0' } }, (res) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              hfFetch(res.headers.location).then(resolve).catch(reject);
+              return;
+            }
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+              try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+              catch { resolve([]); }
+            });
+          });
+          hfReq.on('error', reject);
+          hfReq.setTimeout(15000, () => { hfReq.destroy(); reject(new Error('HuggingFace API timeout')); });
+        });
+
+        const hfData = await hfFetch(hfUrl);
+
+        // For each model, extract GGUF download links from siblings
+        const hfResults = [];
+        for (const m of (Array.isArray(hfData) ? hfData : [])) {
+          const repoId = m.id || m.modelId || m._id;
+          const ggufFiles = (m.siblings || [])
+            .filter(s => s.rfilename && s.rfilename.toLowerCase().endsWith('.gguf'))
+            .map(s => ({
+              filename: s.rfilename,
+              url: `https://huggingface.co/${repoId}/resolve/main/${encodeURIComponent(s.rfilename)}`,
+              size: s.size || null,
+            }));
+
+          const tags = m.tags || [];
+          const pipeline = tags.find(t => t === 'text-generation' || t === 'text2text-generation' || t === 'feature-extraction') || '';
+
+          hfResults.push({
+            id: repoId,
+            name: repoId?.split('/').pop() || repoId,
+            author: repoId?.split('/')[0] || '',
+            downloads: m.downloads || 0,
+            likes: m.likes || 0,
+            tags: tags.filter(t => !t.startsWith('base_model:') && !t.startsWith('region:') && t !== 'endpoints_compatible').slice(0, 10),
+            lastModified: m.lastModified,
+            pipeline,
+            files: ggufFiles,
+          });
+        }
+        result = hfResults;
+        break;
+      }
+
+      case 'models-download': {
+        // Download a GGUF file from URL to models directory
+        const { url: dlUrl, filename: dlFilename } = args[0] || {};
+        if (!dlUrl || !dlFilename) throw new Error('url and filename required');
+
+        // Validate URL is from huggingface.co
+        const parsedDlUrl = new URL(dlUrl);
+        if (!parsedDlUrl.hostname.endsWith('huggingface.co')) {
+          throw new Error('Downloads restricted to huggingface.co');
+        }
+
+        // Sanitize filename
+        const safeName = path.basename(dlFilename).replace(/[^a-zA-Z0-9._-]/g, '_');
+        if (!safeName.toLowerCase().endsWith('.gguf')) throw new Error('Only .gguf files can be downloaded');
+
+        const destPath = path.join(MODELS_DIR, safeName);
+        if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
+
+        // Stream download with progress
+        const dlModule = parsedDlUrl.protocol === 'https:' ? require('https') : require('http');
+        await new Promise((resolve, reject) => {
+          const follow = (url, redirects = 0) => {
+            if (redirects > 5) { reject(new Error('Too many redirects')); return; }
+            const u = new URL(url);
+            const client = u.protocol === 'https:' ? require('https') : require('http');
+            client.get(url, { headers: { 'User-Agent': 'Dax/1.0' } }, (res) => {
+              if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                follow(res.headers.location, redirects + 1);
+                return;
+              }
+              if (res.statusCode !== 200) {
+                reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+                return;
+              }
+              const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+              let downloaded = 0;
+              const ws = fs.createWriteStream(destPath);
+              let lastProgress = 0;
+              res.on('data', (chunk) => {
+                downloaded += chunk.length;
+                ws.write(chunk);
+                const pct = totalBytes > 0 ? Math.floor((downloaded / totalBytes) * 100) : 0;
+                if (pct >= lastProgress + 2) { // Emit every 2%
+                  lastProgress = pct;
+                  sendToParent('model-download-progress', { filename: safeName, downloaded, total: totalBytes, percent: pct });
+                }
+              });
+              res.on('end', () => { ws.end(); resolve(); });
+              res.on('error', (err) => { ws.destroy(); reject(err); });
+            }).on('error', reject);
+          };
+          follow(dlUrl);
+        });
+        sendToParent('model-download-progress', { filename: safeName, downloaded: -1, total: -1, percent: 100, done: true });
+        result = { success: true, path: destPath, filename: safeName };
         break;
       }
 
@@ -963,13 +1342,30 @@ async function handleMessage(msg) {
         break;
       }
 
+      // ─── Metrics ─────────────────────
+      case 'get-metrics': {
+        const mem = process.memoryUsage();
+        let dbSizeBytes = 0;
+        try { dbSizeBytes = fs.statSync(DB_PATH).size; } catch (_) {}
+        metrics.gauge('memory_rss', mem.rss);
+        metrics.gauge('memory_heap_used', mem.heapUsed);
+        metrics.gauge('db_size_bytes', dbSizeBytes);
+        metrics.gauge('active_runs', getActiveRuns().length);
+        result = metrics.getAll();
+        break;
+      }
+
       default:
         error = `Unknown command: ${cmd}`;
     }
   } catch (err) {
     error = err.message;
+    metrics.increment('ipc_errors');
     log('error', 'SERVICE', `Command failed: ${cmd}`, { error: err.message });
   }
+
+  // Track IPC timing
+  metrics.observe('ipc_duration_ms', Date.now() - _ipcStart);
 
   // Send response back to parent
   if (id) {
@@ -1023,8 +1419,9 @@ function shutdown() {
   stopWebhookServer();
   removeLockFile();
   if (_heartbeatInterval) clearInterval(_heartbeatInterval);
-  if (_db) { try { saveDb(); _db.close(); } catch (_) {} }
+  if (_db) { try { saveDbSync(); _db.close(); } catch (_) {} }
   log('info', 'SERVICE', 'Shutdown complete');
+  _flushLogsSync();
   process.exit(0);
 }
 

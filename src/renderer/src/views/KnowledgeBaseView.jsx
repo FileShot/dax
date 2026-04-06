@@ -13,6 +13,7 @@ import {
   CheckCircle,
   BookOpen,
 } from 'lucide-react';
+import HelpGuide from '../components/HelpGuide';
 
 const dax = window.dax;
 
@@ -288,9 +289,12 @@ export default function KnowledgeBaseView() {
             </p>
           </div>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary px-4 py-2 text-sm rounded-lg flex items-center gap-2">
-          <Plus size={16} /> New Knowledge Base
-        </button>
+        <div className="flex gap-2">
+          <HelpGuide page="knowledge" />
+          <button onClick={() => setShowCreate(true)} className="btn-primary px-4 py-2 text-sm rounded-lg flex items-center gap-2">
+            <Plus size={16} /> New Knowledge Base
+          </button>
+        </div>
       </div>
 
       {/* Ingest Status */}

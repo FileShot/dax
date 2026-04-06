@@ -9,6 +9,7 @@
  */
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
@@ -262,9 +263,19 @@ function createTray() {
 }
 
 // ─── IPC Handlers: Window Controls ─────────────────────────
-// Wrapper for safe IPC handling with logging
-function ipcSafe(channel, handler) {
+// Wrapper for safe IPC handling with logging and optional Zod validation.
+// schema: a Zod schema (or null). When provided and args[0] is the payload,
+// validation runs before the handler. For tuple schemas pass z.tuple([...]).
+function ipcSafe(channel, handler, schema = null) {
   ipcMain.handle(channel, async (event, ...args) => {
+    if (schema) {
+      const parsed = schema.safeParse(args.length === 1 ? args[0] : args);
+      if (!parsed.success) {
+        const msg = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+        log('warn', 'IPC', `Validation failed: ${channel}`, { errors: msg });
+        throw new Error(`Invalid input: ${msg}`);
+      }
+    }
     try {
       const result = await handler(event, ...args);
       return result;
@@ -274,6 +285,9 @@ function ipcSafe(channel, handler) {
     }
   });
 }
+
+// Load IPC schemas (Zod)
+const schemas = require('./ipc-schemas');
 
 ipcSafe('win-minimize', () => mainWindow?.minimize());
 ipcSafe('win-maximize', () => {
@@ -398,6 +412,13 @@ function startService() {
       return;
     }
 
+    if (type === 'model-download-progress') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('model-download-progress', rest);
+      }
+      return;
+    }
+
     if (type === 'log') {
       // Service log forwarding (optional — already goes to service log file)
       return;
@@ -459,8 +480,8 @@ function startHealthCheck() {
 // ─── IPC: Agent CRUD (proxied to service) ──────────────────
 ipcSafe('agents-list', () => serviceCall('agents-list'));
 ipcSafe('agents-get', (_e, id) => serviceCall('agents-get', id));
-ipcSafe('agents-create', (_e, agent) => serviceCall('agents-create', agent));
-ipcSafe('agents-update', (_e, id, updates) => serviceCall('agents-update', id, updates));
+ipcSafe('agents-create', (_e, agent) => serviceCall('agents-create', agent), schemas.agentsCreate);
+ipcSafe('agents-update', (_e, id, updates) => serviceCall('agents-update', id, updates), schemas.agentsUpdate);
 ipcSafe('agents-delete', (_e, id) => serviceCall('agents-delete', id));
 ipcSafe('agents-toggle', (_e, id) => serviceCall('agents-toggle', id));
 
@@ -565,12 +586,14 @@ ipcSafe('models-scan-local', () => {
   return files;
 });
 
-ipcSafe('models-add', (_e, model) => serviceCall('models-add', model));
+ipcSafe('models-add', (_e, model) => serviceCall('models-add', model), schemas.modelsAdd);
 ipcSafe('models-delete', (_e, id) => serviceCall('models-delete', id));
+ipcSafe('models-search-hf', (_e, opts) => serviceCall('models-search-hf', opts));
+ipcSafe('models-download', (_e, opts) => serviceCall('models-download', opts));
 
 // ─── IPC: Settings (proxied to service) ─────────────────────
 ipcSafe('settings-get', (_e, key) => serviceCall('settings-get', key));
-ipcSafe('settings-set', (_e, key, value) => serviceCall('settings-set', key, value));
+ipcSafe('settings-set', (_e, key, value) => serviceCall('settings-set', key, value), schemas.settingsSet);
 ipcSafe('settings-all', () => serviceCall('settings-all'));
 
 // ─── IPC: System Info ───────────────────────────────────────
@@ -584,9 +607,15 @@ ipcSafe('system-info', () => {
     freeMemory: os.freemem(),
     nodeVersion: process.versions.node,
     electronVersion: process.versions.electron,
+    appVersion: app.getVersion(),
     userDataPath: USER_DATA,
     modelsDir: MODELS_DIR,
     dbPath: DB_PATH,
+    versions: {
+      electron: process.versions.electron,
+      node: process.versions.node,
+      chrome: process.versions.chrome,
+    },
   };
 });
 
@@ -600,25 +629,26 @@ ipcSafe('get-recent-logs', (_e, lines = 100) => {
   try {
     if (!fs.existsSync(LOG_FILE)) return [];
     const content = fs.readFileSync(LOG_FILE, 'utf-8');
-    return content.split('\n').filter(Boolean).slice(-lines);
+    const safeLines = Math.min(Math.max(1, Number.isInteger(lines) ? lines : 100), 10000);
+    return content.split('\n').filter(Boolean).slice(-safeLines);
   } catch {
     return [];
   }
-});
+}, schemas.getRecentLogs);
 
 // ─── Agent Execution Engine (proxied to service) ────────────
-ipcSafe('agent-run', (_e, agentId, triggerData) => serviceCall('agent-run', agentId, triggerData));
+ipcSafe('agent-run', (_e, agentId, triggerData) => serviceCall('agent-run', agentId, triggerData), schemas.agentRun);
 ipcSafe('agent-cancel-run', (_e, runId) => serviceCall('agent-cancel-run', runId));
 ipcSafe('agent-active-runs', () => serviceCall('agent-active-runs'));
 ipcSafe('tools-list', () => serviceCall('tools-list'));
 ipcSafe('scheduler-status', () => serviceCall('scheduler-status'));
 
 // ─── MCP Client (proxied to service) ────────────────────────
-ipcSafe('mcp-add-server', (_e, config) => serviceCall('mcp-add-server', config));
+ipcSafe('mcp-add-server', (_e, config) => serviceCall('mcp-add-server', config), schemas.mcpAddServer);
 ipcSafe('mcp-remove-server', (_e, id) => serviceCall('mcp-remove-server', id));
 ipcSafe('mcp-list-servers', () => serviceCall('mcp-list-servers'));
 ipcSafe('mcp-server-tools', (_e, serverId) => serviceCall('mcp-server-tools', serverId));
-ipcSafe('mcp-call-tool', (_e, toolName, args) => serviceCall('mcp-call-tool', toolName, args));
+ipcSafe('mcp-call-tool', (_e, toolName, args) => serviceCall('mcp-call-tool', toolName, args), schemas.mcpCallTool);
 
 // ─── Integrations (proxied to service) ──────────────────────
 ipcSafe('integrations-list', () => serviceCall('integrations-list'));
@@ -627,14 +657,14 @@ ipcSafe('integration-connect', async (_e, integrationId, credentials) => {
   // Persist non-OAuth manual credentials
   credentialStore.set(integrationId, { credentials, providerId: null, oauthMeta: null });
   return result;
-});
+}, schemas.integrationConnect);
 ipcSafe('integration-disconnect', async (_e, integrationId) => {
   const result = await serviceCall('integration-disconnect', integrationId);
   credentialStore.delete(integrationId);
   return result;
 });
 ipcSafe('integration-test', (_e, integrationId, credentials) => serviceCall('integration-test', integrationId, credentials));
-ipcSafe('integration-action', (_e, integrationId, actionName, params) => serviceCall('integration-action', integrationId, actionName, params));
+ipcSafe('integration-action', (_e, integrationId, actionName, params) => serviceCall('integration-action', integrationId, actionName, params), schemas.integrationAction);
 
 // ─── OAuth Flows ─────────────────────────────────────────────
 
@@ -684,7 +714,8 @@ async function handleOAuthCallback(url) {
 }
 
 // IPC: Start OAuth flow — opens browser for user authorization
-ipcSafe('oauth-start', async (_e, { providerId, integrationId, clientId, clientSecret, options }) => {
+ipcSafe('oauth-start', async (_e, oauthArgs) => {
+  const { providerId, integrationId, clientId, clientSecret, options } = oauthArgs;
   if (!providerId || !integrationId || !clientId) throw new Error('providerId, integrationId, and clientId are required');
   const { verifier, challenge, state } = oauthManager.generatePKCE();
   const redirectUri = 'dax://oauth/callback';
@@ -695,7 +726,7 @@ ipcSafe('oauth-start', async (_e, { providerId, integrationId, clientId, clientS
   shell.openExternal(authUrl);
   log('info', 'OAUTH', `OAuth flow started: ${providerId} → ${integrationId}`);
   return { state, authUrl };
-});
+}, schemas.oauthStart);
 
 // IPC: List available OAuth providers
 ipcSafe('oauth-providers', () =>
@@ -729,10 +760,10 @@ ipcSafe('webhook-get-info', (_e, agentId) => serviceCall('webhook-get-info', age
 // ─── Crews / Multi-Agent (proxied to service) ───────────────
 ipcSafe('crews-list', () => serviceCall('crews-list'));
 ipcSafe('crews-get', (_e, id) => serviceCall('crews-get', id));
-ipcSafe('crews-create', (_e, crew) => serviceCall('crews-create', crew));
-ipcSafe('crews-update', (_e, id, updates) => serviceCall('crews-update', id, updates));
+ipcSafe('crews-create', (_e, crew) => serviceCall('crews-create', crew), schemas.crewsCreate);
+ipcSafe('crews-update', (_e, id, updates) => serviceCall('crews-update', id, updates), schemas.crewsUpdate);
 ipcSafe('crews-delete', (_e, id) => serviceCall('crews-delete', id));
-ipcSafe('crews-run', (_e, crewId, triggerData) => serviceCall('crews-run', crewId, triggerData));
+ipcSafe('crews-run', (_e, crewId, triggerData) => serviceCall('crews-run', crewId, triggerData), schemas.crewsRun);
 
 // ─── Voice Engine (local — uses audio APIs) ─────────────────
 const { voiceEngine, setLogger: setVoiceLogger } = require('./engine/voice-engine');
@@ -741,7 +772,7 @@ setVoiceLogger((level, category, msg, data) => log(level, category, msg, data));
 ipcSafe('voice-configure', (_e, settings) => {
   voiceEngine.configure(settings);
   return { success: true };
-});
+}, schemas.voiceConfigure);
 
 ipcSafe('voice-get-config', () => {
   return voiceEngine.getConfig();
@@ -750,7 +781,7 @@ ipcSafe('voice-get-config', () => {
 ipcSafe('voice-transcribe', async (_e, audioBase64) => {
   const audioBuffer = Buffer.from(audioBase64, 'base64');
   return voiceEngine.transcribe(audioBuffer);
-});
+}, schemas.voiceTranscribe);
 
 ipcSafe('voice-synthesize', async (_e, text) => {
   const result = await voiceEngine.synthesize(text);
@@ -785,7 +816,84 @@ ipcSafe('plugins-unload', async (_e, pluginId) => {
 
 ipcSafe('plugins-dir', () => pluginsDir);
 
-// ─── App Lifecycle ──────────────────────────────────────────
+// ─── Knowledge Base / RAG (proxied to service) ──────────────
+ipcSafe('kb-list',   () => serviceCall('kb-list'));
+ipcSafe('kb-get',    (_e, id) => serviceCall('kb-get', id));
+ipcSafe('kb-create', (_e, data) => serviceCall('kb-create', data), schemas.kbCreate);
+ipcSafe('kb-delete', (_e, id) => serviceCall('kb-delete', id));
+ipcSafe('kb-ingest', (_e, data) => serviceCall('kb-ingest', data), schemas.kbIngest);
+ipcSafe('kb-query',  (_e, data) => serviceCall('kb-query', data), schemas.kbQuery);
+ipcSafe('kb-delete-doc', (_e, data) => serviceCall('kb-delete-doc', data), schemas.kbDeleteDoc);
+ipcSafe('kb-ensure-model', (_e, model) => serviceCall('kb-ensure-model', model), schemas.kbEnsureModel);
+
+// ─── Chat (ephemeral LLM) ───────────────────────────────────
+ipcSafe('chat-message', (_e, data) => serviceCall('chat-message', data), schemas.chatMessage);
+ipcSafe('chat-history-list', (_e, limit) => serviceCall('chat-history-list', limit));
+ipcSafe('chat-history-save', (_e, msg) => serviceCall('chat-history-save', msg));
+ipcSafe('chat-history-clear', () => serviceCall('chat-history-clear'));
+
+// ─── Auto Updater ───────────────────────────────────────────
+ipcSafe('update-check', () => {
+  if (!IS_DEV) autoUpdater.checkForUpdates();
+  return { checking: !IS_DEV };
+});
+
+ipcSafe('update-download', () => {
+  autoUpdater.downloadUpdate();
+  return { downloading: true };
+});
+
+ipcSafe('update-install', () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
+function setupAutoUpdater() {
+  if (IS_DEV) return; // No update checks in development
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = { info: (m) => log('info', 'UPDATER', m), warn: (m) => log('warn', 'UPDATER', m), error: (m) => log('error', 'UPDATER', m) };
+
+  function sendStatus(payload) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', payload);
+    }
+  }
+
+  autoUpdater.on('checking-for-update', () => {
+    log('info', 'UPDATER', 'Checking for updates');
+    sendStatus({ status: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    log('info', 'UPDATER', `Update available: ${info.version}`, { releaseDate: info.releaseDate });
+    sendStatus({ status: 'available', version: info.version, releaseDate: info.releaseDate });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    log('info', 'UPDATER', 'No updates available');
+    sendStatus({ status: 'up-to-date' });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendStatus({ status: 'downloading', percent: Math.round(progress.percent), bytesPerSecond: progress.bytesPerSecond });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log('info', 'UPDATER', `Update downloaded: ${info.version}`);
+    sendStatus({ status: 'ready', version: info.version });
+  });
+
+  autoUpdater.on('error', (err) => {
+    log('error', 'UPDATER', 'Update error', { error: err.message });
+    sendStatus({ status: 'error', message: err.message });
+  });
+
+  // Check on startup (slight delay to let window render first)
+  setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+}
+
+// ─── App Lifecycle ───────────────────────────────────────────
 // Auto-launch on login (configurable via settings)
 if (!IS_DEV) {
   app.setLoginItemSettings({
@@ -830,6 +938,9 @@ app.on('ready', () => {
   });
 
   log('info', 'APP', 'Initialization complete');
+
+  // Start auto-updater (production only)
+  setupAutoUpdater();
 });
 
 // ─── OAuth deep-link callback (Windows/Linux — comes as second instance) ───

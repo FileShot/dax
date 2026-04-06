@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import useRunStore from '../stores/useRunStore';
+import useAgentStore from '../stores/useAgentStore';
 import RunTimeline from '../components/RunTimeline';
+import HelpGuide from '../components/HelpGuide';
 import {
   Clock,
   CheckCircle,
@@ -24,7 +26,7 @@ const STATUS_CONFIG = {
   cancelled: { icon: AlertTriangle, color: 'text-dax-warning', dot: 'status-paused', label: 'Cancelled' },
 };
 
-function RunRow({ run, onSelect }) {
+function RunRow({ run, onSelect, agentName }) {
   const config = STATUS_CONFIG[run.status] || STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
   const duration = run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)}s` : '--';
@@ -40,7 +42,7 @@ function RunRow({ run, onSelect }) {
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-dax-text-bright font-medium truncate">{run.agent_id}</span>
+          <span className="text-sm text-dax-text-bright font-medium truncate">{agentName || run.agent_id}</span>
           <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider ${
             run.status === 'completed' ? 'bg-dax-success/15 text-dax-success' :
             run.status === 'error' ? 'bg-dax-error/15 text-dax-error' :
@@ -74,7 +76,7 @@ function RunRow({ run, onSelect }) {
 }
 
 // ─── Run Detail ───────────────────────────────────────────────────────────────
-function RunDetail({ run, onBack }) {
+function RunDetail({ run, onBack, agentName }) {
   const [fullRun, setFullRun] = useState(null);
   const [liveSteps, setLiveSteps] = useState([]);
   const [isLive, setIsLive] = useState(false);
@@ -162,7 +164,7 @@ function RunDetail({ run, onBack }) {
               <div className="text-[10px] text-dax-text-dim uppercase tracking-wide mb-1">Agent</div>
               <div className="flex items-center gap-1.5 text-xs text-dax-text">
                 <Bot size={12} />
-                {detail.agent_id}
+                {agentName || detail.agent_id}
               </div>
             </div>
             <div className="agent-card p-3">
@@ -236,14 +238,20 @@ function RunDetail({ run, onBack }) {
 
 export default function HistoryView() {
   const { runs, loading, fetch } = useRunStore();
+  const { agents, fetch: fetchAgents } = useAgentStore();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedRun, setSelectedRun] = useState(null);
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetch(); fetchAgents(); }, []);
+
+  // Build agent_id → name lookup
+  const nameMap = {};
+  agents.forEach((a) => { nameMap[a.id] = a.name; });
 
   const filtered = runs.filter((r) => {
-    if (search && !r.agent_id.toLowerCase().includes(search.toLowerCase())) return false;
+    const displayName = nameMap[r.agent_id] || r.agent_id;
+    if (search && !displayName.toLowerCase().includes(search.toLowerCase()) && !r.agent_id.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && r.status !== statusFilter) return false;
     return true;
   });
@@ -252,9 +260,12 @@ export default function HistoryView() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-dax-text-bright">Run History</h1>
-        <p className="text-sm text-dax-text-dim mt-1">View and inspect past agent executions</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-dax-text-bright">Run History</h1>
+          <p className="text-sm text-dax-text-dim mt-1">View and inspect past agent executions</p>
+        </div>
+        <HelpGuide page="history" />
       </div>
 
       {/* Filters */}
@@ -303,14 +314,14 @@ export default function HistoryView() {
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map((run) => (
-            <RunRow key={run.id} run={run} onSelect={setSelectedRun} />
+            <RunRow key={run.id} run={run} onSelect={setSelectedRun} agentName={nameMap[run.agent_id]} />
           ))}
         </div>
       )}
 
       {/* Run Detail Modal */}
       {selectedRun && (
-        <RunDetail run={selectedRun} onBack={() => setSelectedRun(null)} />
+        <RunDetail run={selectedRun} onBack={() => setSelectedRun(null)} agentName={nameMap[selectedRun.agent_id]} />
       )}
     </div>
   );

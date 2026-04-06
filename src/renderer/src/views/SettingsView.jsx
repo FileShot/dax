@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTheme, themeList } from '../components/ThemeProvider';
 import useSettingsStore from '../stores/useSettingsStore';
+import HelpGuide from '../components/HelpGuide';
 import {
   Palette,
   Monitor,
@@ -10,6 +11,10 @@ import {
   Info,
   ChevronRight,
   Check,
+  RefreshCw,
+  Download,
+  Zap,
+  AlertCircle,
 } from 'lucide-react';
 
 const SECTIONS = [
@@ -185,13 +190,30 @@ function PathsSection() {
 
 function AboutSection() {
   const [systemInfo, setSystemInfo] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState(null); // { status, version, percent, message }
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     if (!window.dax) return;
     window.dax.system.info()
       .then(setSystemInfo)
       .catch((err) => console.error('[Settings] Failed to load system info:', err));
+
+    // Subscribe to live update status events from main process
+    const unsubscribe = window.dax.updates?.onStatus((status) => {
+      setUpdateStatus(status);
+      if (status.status !== 'checking') setChecking(false);
+    });
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);
+
+  function handleCheckForUpdates() {
+    setChecking(true);
+    setUpdateStatus({ status: 'checking' });
+    window.dax.updates?.check();
+  }
+
+  const appVersion = systemInfo?.appVersion ?? '0.1.0';
 
   return (
     <div>
@@ -203,7 +225,98 @@ function AboutSection() {
         </div>
         <div className="text-base font-brand text-dax-text-bright tracking-wider">DAX</div>
         <div className="text-xs text-dax-text-dim mt-1">Privacy-first AI Agent Platform</div>
-        <div className="text-[10px] text-dax-text-dim mt-2">v0.1.0</div>
+        <div className="text-[10px] text-dax-text-dim mt-2">v{appVersion}</div>
+      </div>
+
+      {/* ── Update Section ─────────────────────────────────────── */}
+      <div className="agent-card p-4 mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-dax-text-bright">Software Updates</span>
+          <button
+            onClick={handleCheckForUpdates}
+            disabled={checking || updateStatus?.status === 'downloading'}
+            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg bg-dax-accent/10 hover:bg-dax-accent/20 text-dax-accent transition-fast disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={11} className={checking ? 'animate-spin' : ''} />
+            Check for Updates
+          </button>
+        </div>
+
+        {/* Status display */}
+        {updateStatus && (
+          <div className="mt-2">
+            {updateStatus.status === 'checking' && (
+              <div className="flex items-center gap-2 text-[11px] text-dax-text-dim">
+                <RefreshCw size={11} className="animate-spin shrink-0" />
+                Checking for updates…
+              </div>
+            )}
+
+            {updateStatus.status === 'up-to-date' && (
+              <div className="flex items-center gap-2 text-[11px] text-green-400">
+                <Check size={11} className="shrink-0" />
+                You&apos;re up to date
+              </div>
+            )}
+
+            {updateStatus.status === 'available' && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[11px] text-dax-accent">
+                  <Download size={11} className="shrink-0" />
+                  v{updateStatus.version} available
+                  {updateStatus.releaseDate && (
+                    <span className="text-dax-text-dim">
+                      · {new Date(updateStatus.releaseDate).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => window.dax.updates?.download()}
+                  className="text-[11px] px-3 py-1 rounded-lg bg-dax-accent text-white hover:bg-dax-accent/80 transition-fast"
+                >
+                  Download
+                </button>
+              </div>
+            )}
+
+            {updateStatus.status === 'downloading' && (
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-dax-text-dim mb-1.5">
+                  <span className="flex items-center gap-1.5"><Download size={11} />Downloading update…</span>
+                  <span>{updateStatus.percent ?? 0}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-dax-surface-2 overflow-hidden">
+                  <div
+                    className="h-full bg-dax-accent rounded-full transition-all duration-300"
+                    style={{ width: `${updateStatus.percent ?? 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {updateStatus.status === 'ready' && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[11px] text-green-400">
+                  <Zap size={11} className="shrink-0" />
+                  v{updateStatus.version} ready to install
+                </div>
+                <button
+                  onClick={() => window.dax.updates?.install()}
+                  className="text-[11px] px-3 py-1 rounded-lg bg-green-600 text-white hover:bg-green-500 transition-fast"
+                >
+                  Install &amp; Restart
+                </button>
+              </div>
+            )}
+
+            {updateStatus.status === 'error' && (
+              <div className="flex items-center gap-2 text-[11px] text-red-400">
+                <AlertCircle size={11} className="shrink-0" />
+                {updateStatus.message || 'Update check failed'}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {systemInfo && (
@@ -226,11 +339,11 @@ function AboutSection() {
           </div>
           <div className="agent-card p-3">
             <div className="text-[10px] text-dax-text-dim uppercase tracking-wide mb-1">Electron</div>
-            <div className="text-xs text-dax-text">{systemInfo.versions?.electron}</div>
+            <div className="text-xs text-dax-text">{systemInfo.versions?.electron ?? systemInfo.electronVersion}</div>
           </div>
           <div className="agent-card p-3">
             <div className="text-[10px] text-dax-text-dim uppercase tracking-wide mb-1">Node.js</div>
-            <div className="text-xs text-dax-text">{systemInfo.versions?.node}</div>
+            <div className="text-xs text-dax-text">{systemInfo.versions?.node ?? systemInfo.nodeVersion}</div>
           </div>
         </div>
       )}
@@ -253,7 +366,10 @@ export default function SettingsView() {
     <div className="flex h-full">
       {/* Left Nav */}
       <div className="w-[200px] border-r border-dax-panel-border p-3 shrink-0">
-        <h1 className="text-base font-semibold text-dax-text-bright px-3 mb-3">Settings</h1>
+        <div className="flex items-center justify-between px-3 mb-3">
+          <h1 className="text-base font-semibold text-dax-text-bright">Settings</h1>
+          <HelpGuide page="settings" />
+        </div>
         <div className="flex flex-col gap-0.5">
           {SECTIONS.map(({ id, label, icon: Icon }) => (
             <button

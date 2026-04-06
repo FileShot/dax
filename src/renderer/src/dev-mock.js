@@ -169,6 +169,11 @@ if (typeof window !== 'undefined' && !window.__electronPreload) {
       action: async (id, action, params) => { console.log('[MOCK] integration action:', id, action, params); return { result: 'mock' }; },
     },
 
+    health: {
+      circuitStatus: async () => ({}),
+      errorBudgetStatus: async () => ({}),
+    },
+
     webhooks: {
       generateToken: async (agentId) => { return { token: 'mock-token-' + Date.now() }; },
       getInfo: async (agentId) => { return { token: null, url: null, port: 3700 }; },
@@ -219,6 +224,14 @@ if (typeof window !== 'undefined' && !window.__electronPreload) {
       scanLocal: async () => [],
       add: async (model) => { console.log('[MOCK] add model:', model); return { success: true }; },
       delete: async (id) => { console.log('[MOCK] delete model:', id); return { success: true }; },
+      searchHF: async ({ query }) => {
+        await delay(500);
+        return [
+          { id: 'TheBloke/Llama-3-8B-GGUF', name: 'Llama-3-8B-GGUF', author: 'TheBloke', downloads: 150000, likes: 320, tags: ['gguf', 'llama'], pipeline: 'text-generation', files: [{ filename: 'llama-3-8b.Q4_K_M.gguf', url: 'https://huggingface.co/mock', size: 4920000000 }] },
+        ];
+      },
+      download: async ({ url, filename }) => { console.log('[MOCK] download model:', url, filename); return { success: true }; },
+      onDownloadProgress: () => () => {},
     },
 
     settings: {
@@ -248,6 +261,17 @@ if (typeof window !== 'undefined' && !window.__electronPreload) {
       llmStatus: (cb) => () => {},
       notification: (cb) => () => {},
       navigate: (cb) => () => {},
+    },
+
+    chat: {
+      send: async (data) => {
+        await delay(800);
+        const last = (data.messages || []).findLast(m => m.role === 'user');
+        return { content: `[Mock] You said: "${last?.content || ''}"`, usage: { total_tokens: 10 } };
+      },
+      historyList: async () => [],
+      historySave: async (msg) => ({ id: msg.id || 'mock-' + Date.now() }),
+      historyClear: async () => ({ success: true }),
     },
   };
 }

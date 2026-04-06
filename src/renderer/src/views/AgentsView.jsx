@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import useAgentStore from '../stores/useAgentStore';
 import useModelStore from '../stores/useModelStore';
+import HelpGuide from '../components/HelpGuide';
 import {
   Bot,
   Plus,
@@ -20,6 +21,8 @@ import {
   Link,
   Copy,
   RefreshCw,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 const TRIGGER_TYPES = [
@@ -48,6 +51,7 @@ function CreateAgentModal({ onClose, onCreate, models }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [triggerType, setTriggerType] = useState('manual');
+  const [cronSchedule, setCronSchedule] = useState('*/5 * * * *');
   const [modelId, setModelId] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [creating, setCreating] = useState(false);
@@ -57,10 +61,13 @@ function CreateAgentModal({ onClose, onCreate, models }) {
     if (!name.trim()) return;
     setCreating(true);
     try {
+      const triggerConfig = {};
+      if (triggerType === 'schedule') triggerConfig.cron = cronSchedule.trim();
       await onCreate({
         name: name.trim(),
         description: description.trim(),
         trigger_type: triggerType,
+        trigger_config: triggerConfig,
         model_id: modelId,
         system_prompt: systemPrompt.trim(),
       });
@@ -125,6 +132,19 @@ function CreateAgentModal({ onClose, onCreate, models }) {
               ))}
             </div>
           </div>
+
+          {triggerType === 'schedule' && (
+            <div>
+              <label className="block text-xs text-dax-text-dim mb-1.5 uppercase tracking-wide">Cron Schedule</label>
+              <input
+                className="input font-mono text-xs"
+                placeholder="*/5 * * * *"
+                value={cronSchedule}
+                onChange={(e) => setCronSchedule(e.target.value)}
+              />
+              <div className="text-[10px] text-dax-text-dim mt-1">e.g. */5 * * * * = every 5 minutes, */3 * * * * = every 3 minutes</div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-dax-text-dim mb-1.5 uppercase tracking-wide">Model</label>
@@ -553,6 +573,7 @@ export default function AgentsView() {
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-base font-semibold text-dax-text-bright">Agents</h1>
             <div className="flex gap-1">
+              <HelpGuide page="agents" />
               <button
                 onClick={async () => {
                   try {
@@ -599,6 +620,39 @@ export default function AgentsView() {
               </button>
             ))}
           </div>
+
+          {agents.length > 0 && (
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              <button
+                onClick={async () => {
+                  for (const a of agents) { if (!a.enabled) await toggle(a.id); }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-dax-text-dim hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                title="Enable all agents"
+              >
+                <ToggleRight size={13} /> Enable All
+              </button>
+              <button
+                onClick={async () => {
+                  for (const a of agents) { if (a.enabled) await toggle(a.id); }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-dax-text-dim hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                title="Disable all agents"
+              >
+                <ToggleLeft size={13} /> Disable All
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Delete all ${agents.length} agents? This cannot be undone.`)) return;
+                  for (const a of agents) { await remove(a.id); }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-dax-text-dim hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                title="Delete all agents"
+              >
+                <Trash2 size={13} /> Delete All
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Agent List */}

@@ -13,6 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import WorkflowNode from '../builder/WorkflowNode';
 import NodeConfigPanel from '../builder/NodeConfigPanel';
+import HelpGuide from '../components/HelpGuide';
 import { NODE_TYPES, NODE_CATEGORIES, getNodesByCategory } from '../builder/node-types';
 import * as Icons from 'lucide-react';
 import useAgentStore from '../stores/useAgentStore';
@@ -239,6 +240,8 @@ export default function BuilderView() {
         )}
 
         <div className="flex-1" />
+
+        <HelpGuide page="builder" />
 
         {/* Add node button */}
         <button

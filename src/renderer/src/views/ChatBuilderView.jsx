@@ -4,6 +4,7 @@ import {
   CheckCircle2, ArrowRight, Wand2, RotateCcw,
 } from 'lucide-react';
 import { NODE_TYPES, getNodesByCategory } from '../builder/node-types';
+import HelpGuide from '../components/HelpGuide';
 
 const EXAMPLE_PROMPTS = [
   'Monitor a folder for new CSV files and send me a notification when one appears',
@@ -166,6 +167,7 @@ Rules:
           <span className="text-[10px] text-dax-text-dim px-1.5 py-0.5 rounded bg-dax-accent/10 text-dax-accent">
             AI-Powered
           </span>
+          <HelpGuide page="chatBuilder" />
         </div>
         {messages.length > 0 && (
           <button onClick={resetChat} className="btn-secondary btn-sm">

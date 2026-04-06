@@ -128,6 +128,13 @@ contextBridge.exposeInMainWorld('dax', {
     scanLocal: () => ipcRenderer.invoke('models-scan-local'),
     add:       (model) => ipcRenderer.invoke('models-add', model),
     delete:    (id) => ipcRenderer.invoke('models-delete', id),
+    searchHF:  (opts) => ipcRenderer.invoke('models-search-hf', opts),
+    download:  (opts) => ipcRenderer.invoke('models-download', opts),
+    onDownloadProgress: (cb) => {
+      const handler = (_e, data) => cb(data);
+      ipcRenderer.on('model-download-progress', handler);
+      return () => ipcRenderer.removeListener('model-download-progress', handler);
+    },
   },
 
   // ── Settings ──────────────────────────────────────────
@@ -176,5 +183,30 @@ contextBridge.exposeInMainWorld('dax', {
     navigate:        (cb) => _on('navigate', cb),
     oauthSuccess:    (cb) => _on('oauth-success', cb),
     oauthError:      (cb) => _on('oauth-error', cb),
+  },
+
+  // ── Auto-updater ─────────────────────────────────────
+  updates: {
+    check:    () => ipcRenderer.invoke('update-check'),
+    download: () => ipcRenderer.invoke('update-download'),
+    install:  () => ipcRenderer.invoke('update-install'),
+    onStatus: (cb) => _on('update-status', cb),
+  },
+
+  // ── Chat (ephemeral LLM) ──────────────────────────────
+  chat: {
+    send: (data) => ipcRenderer.invoke('chat-message', data),
+    historyList: (limit) => ipcRenderer.invoke('chat-history-list', limit),
+    historySave: (msg) => ipcRenderer.invoke('chat-history-save', msg),
+    historyClear: () => ipcRenderer.invoke('chat-history-clear'),
+  },
+
+  // ── Output Files ─────────────────────────────────────
+  outputFiles: {
+    list: () => ipcRenderer.invoke('output-files-list'),
+    read: (name) => ipcRenderer.invoke('output-files-read', name),
+  },
+  metrics: {
+    get: () => ipcRenderer.invoke('get-metrics'),
   },
 });

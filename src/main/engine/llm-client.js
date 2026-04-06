@@ -9,24 +9,30 @@
 const https = require('https');
 const http = require('http');
 
+// Keep-alive agents — reuse TCP connections across LLM calls
+const _httpAgent = new http.Agent({ keepAlive: true, maxSockets: 4 });
+const _httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 4 });
+
 const DEFAULT_ENDPOINTS = {
   openai:   'https://api.openai.com/v1',
   ollama:   'http://localhost:11434/v1',
   lmstudio: 'http://localhost:1234/v1',
 };
 
-function sanitizeAssistantContent(content) {
+function sanitizeAssistantContent(content, { stripThinking = false } = {}) {
   if (typeof content !== 'string') return content;
 
   let sanitized = content;
 
-  // Strip chain-of-thought tags some local models emit into normal content.
-  while (sanitized.includes('<think>') && sanitized.includes('</think>')) {
-    sanitized = sanitized.replace(/<think>[\s\S]*<\/think>/g, '');
+  // Only strip chain-of-thought tags when explicitly requested
+  if (stripThinking) {
+    while (sanitized.includes('<think>') && sanitized.includes('</think>')) {
+      sanitized = sanitized.replace(/<think>[\s\S]*<\/think>/g, '');
+    }
+    sanitized = sanitized.replace(/^\s*<think>[\s\S]*$/g, '');
   }
 
   sanitized = sanitized
-    .replace(/^\s*<think>[\s\S]*$/g, '')
     .replace(/^\s*:\s*/, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -61,7 +67,7 @@ function createClient(config = {}) {
   const {
     baseUrl = DEFAULT_ENDPOINTS.ollama,
     apiKey = '',
-    defaultModel = 'llama3',
+    defaultModel = '',
     timeout = 120000,
   } = config;
 
@@ -94,6 +100,7 @@ function createClient(config = {}) {
       const req = client.request(parsed, {
         method: 'POST',
         headers: { ...headers, 'Content-Length': Buffer.byteLength(payload) },
+        agent: parsed.protocol === 'https:' ? _httpsAgent : _httpAgent,
       }, (res) => {
         const chunks = [];
         res.on('data', (chunk) => chunks.push(chunk));
@@ -135,7 +142,7 @@ function createClient(config = {}) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Models list request timed out')), 10000);
 
-      const req = client.request(parsed, { method: 'GET', headers }, (res) => {
+      const req = client.request(parsed, { method: 'GET', headers, agent: parsed.protocol === 'https:' ? _httpsAgent : _httpAgent }, (res) => {
         const chunks = [];
         res.on('data', (chunk) => chunks.push(chunk));
         res.on('end', () => {
@@ -158,7 +165,85 @@ function createClient(config = {}) {
     });
   }
 
-  return { chatCompletion, listModels };
+  // Streaming variant: calls onToken(token) for each text chunk, resolves { content, usage }.
+  async function chatCompletionStream({ messages, model, tools, temperature, maxTokens, onToken }) {
+    const body = {
+      model: model || defaultModel,
+      messages,
+      temperature: temperature ?? 0.7,
+      stream: true,
+    };
+
+    if (maxTokens) body.max_tokens = maxTokens;
+    if (tools && tools.length > 0) body.tools = tools;
+
+    const parsed = new URL(`${baseUrl}/chat/completions`);
+    const client = parsed.protocol === 'https:' ? https : http;
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const payload = JSON.stringify(body);
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('LLM stream timed out')), timeout);
+      let fullContent = '';
+      let usage = null;
+      let buffer = '';
+
+      const req = client.request(parsed, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Length': Buffer.byteLength(payload) },
+        agent: parsed.protocol === 'https:' ? _httpsAgent : _httpAgent,
+      }, (res) => {
+        if (res.statusCode >= 400) {
+          const errChunks = [];
+          res.on('data', (c) => errChunks.push(c));
+          res.on('end', () => {
+            clearTimeout(timer);
+            reject(new Error(`LLM API error ${res.statusCode}: ${Buffer.concat(errChunks).toString('utf-8').slice(0, 500)}`));
+          });
+          return;
+        }
+
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf-8');
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete last line
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const data = trimmed.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const parsed2 = JSON.parse(data);
+              if (parsed2.usage) usage = parsed2.usage;
+              const delta = parsed2.choices?.[0]?.delta?.content;
+              if (delta) {
+                fullContent += delta;
+                if (onToken) onToken(delta);
+              }
+            } catch (_) {}
+          }
+        });
+
+        res.on('end', () => {
+          clearTimeout(timer);
+          resolve({ content: sanitizeAssistantContent(fullContent), usage });
+        });
+      });
+
+      req.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  return { chatCompletion, chatCompletionStream, listModels };
 }
 
 module.exports = { createClient, DEFAULT_ENDPOINTS };

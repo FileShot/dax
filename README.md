@@ -33,9 +33,15 @@ npm run build
 - `src/main/engine/integrations/` — 500+ third-party API integrations
 - `src/renderer/` — React UI (Vite + Tailwind + Zustand)
 
+## Documentation
+
+- [API Reference](docs/api.md) — Complete IPC channel and event reference
+- [Deployment Guide](docs/deployment.md) — Production setup, reverse proxy, systemd, backups
+- [Troubleshooting](docs/troubleshooting.md) — Common issues and diagnostics
+- [Architecture](docs/architecture.md) — System design, data flow, extending Dax
+
 ## License
 
-[Business Source License 1.1](LICENSE) — converts to Apache 2.0 on April 5, 2030.
+[MIT License](LICENSE) — free and open source.
 
-Free for personal use, internal tooling, and non-competing commercial use.
-Contact [graysoft.dev](https://graysoft.dev) for commercial licensing.
+Copyright (c) 2026 Graysoft

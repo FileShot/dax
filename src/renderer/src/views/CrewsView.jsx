@@ -11,6 +11,7 @@ import {
   Crown,
   ArrowRight,
 } from 'lucide-react';
+import HelpGuide from '../components/HelpGuide';
 
 const STRATEGIES = [
   { value: 'sequential', label: 'Sequential', desc: 'Agents run in order, passing output to the next' },
@@ -236,9 +237,12 @@ export default function CrewsView() {
             <h1 className="text-lg font-semibold text-dax-text-bright">Crews</h1>
             <span className="text-xs text-dax-text-dim">Multi-agent collaboration</span>
           </div>
-          <button onClick={() => setShowCreate(true)} className="btn-primary">
-            <Plus size={14} /> New Crew
-          </button>
+          <div className="flex gap-2">
+            <HelpGuide page="crews" />
+            <button onClick={() => setShowCreate(true)} className="btn-primary">
+              <Plus size={14} /> New Crew
+            </button>
+          </div>
         </div>
       </div>
 

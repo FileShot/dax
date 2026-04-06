@@ -4,6 +4,7 @@ import {
   Play, Square, Loader2, RefreshCw, Puzzle, FolderOpen,
   Power, PowerOff, AlertCircle, Check, Trash2,
 } from 'lucide-react';
+import HelpGuide from '../components/HelpGuide';
 
 // ─── Voice Controls ─────────────────────────────────────────
 
@@ -446,6 +447,7 @@ export default function VoicePluginsView() {
             Voice input/output and plugin management
           </p>
         </div>
+        <HelpGuide page="voicePlugins" />
       </div>
 
       <div className="flex gap-1 mb-6 bg-dax-sidebar rounded-lg p-1 w-fit">

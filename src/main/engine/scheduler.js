@@ -117,16 +117,22 @@ function triggerAgent(agent, triggerData) {
 
 // ─── Unschedule a Single Agent ──────────────────────────────
 function unscheduleAgent(agentId) {
+  _log?.('info', 'SCHEDULER', `Unscheduling agent: ${agentId}`, { cronJobs: Array.from(_cronJobs.keys()) });
+
   const job = _cronJobs.get(agentId);
   if (job) {
     job.stop();
     _cronJobs.delete(agentId);
+    _log?.('info', 'SCHEDULER', `Unscheduled cron: ${agentId}`, { remaining: _cronJobs.size });
+  } else {
+    _log?.('warn', 'SCHEDULER', `No cron job found for: ${agentId}`);
   }
 
   const watcher = _watchers.get(agentId);
   if (watcher) {
     watcher.close();
     _watchers.delete(agentId);
+    _log?.('info', 'SCHEDULER', `Unscheduled watcher: ${agentId}`);
   }
 }
 
@@ -138,10 +144,10 @@ function stopAll() {
   _cronJobs.clear();
 
   for (const [id, watcher] of _watchers) {
-  _activeRuns.clear();
     watcher.close();
   }
   _watchers.clear();
+  _activeRuns.clear();
 
   _log?.('info', 'SCHEDULER', 'All schedules stopped');
 }
@@ -149,6 +155,8 @@ function stopAll() {
 // ─── Get Status ─────────────────────────────────────────────
 function getStatus() {
   return {
+    scheduled: _cronJobs.size + _watchers.size,
+    running: _activeRuns.size,
     cronJobs: _cronJobs.size,
     fileWatchers: _watchers.size,
     agents: [
