@@ -73,6 +73,10 @@ function _connect() {
 }
 
 function _invoke(channel, ...args) {
+  // Screenshot/demo mode: if window._DAX_DEMO has a handler for this channel, use it
+  if (window._DAX_DEMO?.[channel]) {
+    return Promise.resolve(window._DAX_DEMO[channel](...args));
+  }
   return new Promise((resolve, reject) => {
     if (!_ws || !_wsReady) {
       return reject(new Error('WebSocket not connected'));

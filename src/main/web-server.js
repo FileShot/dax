@@ -293,42 +293,43 @@ function buildHandlers() {
   };
   handlers['plugins-dir'] = async () => path.join(USER_DATA, 'plugins');
 
-  // OAuth — stubs for browser mode (Electron-only features)
-  handlers['oauth-start'] = async () => { throw new Error('OAuth flow requires the Electron app'); };
-  handlers['oauth-providers'] = async () => [];
-  handlers['credentials-list'] = async () => [];
-  handlers['credentials-delete'] = async () => ({ success: false, error: 'Requires Electron app' });
+  // OAuth — proxy to real agent-service. Browser receives auth URL to open in a new tab.
+  proxy('oauth-start');
+  proxy('oauth-providers');
+  proxy('oauth-callback');
+  proxy('credentials-list');
+  proxy('credentials-delete');
 
-  // Voice — stubs
-  handlers['voice-configure'] = async () => ({ success: true });
-  handlers['voice-get-config'] = async () => ({});
-  handlers['voice-transcribe'] = async () => { throw new Error('Voice transcription requires the Electron app'); };
-  handlers['voice-synthesize'] = async () => { throw new Error('Voice synthesis requires the Electron app'); };
+  // Voice — proxy real transcription/synthesis through the service (Whisper / whisper.cpp / TTS).
+  proxy('voice-configure');
+  proxy('voice-get-config');
+  proxy('voice-transcribe');
+  proxy('voice-synthesize');
 
-  // Window controls — no-ops in browser mode
-  handlers['win-minimize'] = async () => {};
-  handlers['win-maximize'] = async () => {};
-  handlers['win-close'] = async () => {};
+  // Window controls — no-ops in browser mode (no native frame).
+  handlers['win-minimize'] = async () => ({ noop: true });
+  handlers['win-maximize'] = async () => ({ noop: true });
+  handlers['win-close'] = async () => ({ noop: true });
   handlers['win-is-maximized'] = async () => false;
 
-  // Dialogs — stubs (browser can't open native dialogs)
-  handlers['dialog-open-folder'] = async () => null;
-  handlers['dialog-open-file'] = async () => null;
-  handlers['kb-select-file'] = async () => [];
-  handlers['shell-open-external'] = async (url) => { log('info', 'WEB', 'openExternal requested', { url }); return null; };
+  // Dialogs — browser uses HTML <input type="file" /> instead; signal unsupported so UI falls back.
+  handlers['dialog-open-folder'] = async () => ({ unsupported: true, reason: 'browser-mode' });
+  handlers['dialog-open-file'] = async () => ({ unsupported: true, reason: 'browser-mode' });
+  handlers['kb-select-file'] = async () => ({ unsupported: true, reason: 'browser-mode' });
+  handlers['shell-open-external'] = async (url) => ({ openUrl: url });
 
-  // Agent import/export — stubs for now
+  // Agent import/export — browser POSTs file content, no native dialog required.
   handlers['agent-export'] = async (id) => {
     const agent = await serviceCall('agents-get', id);
     if (!agent) throw new Error('Agent not found');
-    return {
-      version: 1,
-      type: 'dax-agent',
-      exported_at: new Date().toISOString(),
-      agent,
-    };
+    return { version: 1, type: 'dax-agent', exported_at: new Date().toISOString(), agent };
   };
-  handlers['agent-import'] = async () => { throw new Error('Agent import requires the Electron app file dialog'); };
+  handlers['agent-import'] = async (payload) => {
+    if (!payload || typeof payload !== 'object') throw new Error('Import payload required');
+    const agent = payload.agent || payload;
+    if (!agent.name) throw new Error('Invalid agent import: missing name');
+    return serviceCall('agents-create', agent);
+  };
 
   return handlers;
 }

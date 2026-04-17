@@ -39,6 +39,7 @@ export default function Sidebar({ activeView, onViewChange, chatOpen, onToggleCh
 
   return (
     <div
+      data-tour="sidebar"
       className={`flex flex-col bg-dax-sidebar border-r border-dax-panel-border shrink-0 transition-smooth ${
         collapsed ? 'w-[var(--dax-nav-icon-w,56px)]' : 'w-[var(--dax-sidebar-w,240px)]'
       }`}
@@ -62,6 +63,7 @@ export default function Sidebar({ activeView, onViewChange, chatOpen, onToggleCh
           return (
             <button
               key={id}
+              data-tour={`nav-${id}`}
               onClick={() => onViewChange(id)}
               className={`nav-item relative flex items-center gap-3 px-3 py-2 rounded-lg text-left w-full ${
                 isActive
@@ -85,6 +87,7 @@ export default function Sidebar({ activeView, onViewChange, chatOpen, onToggleCh
       {/* Bottom Section */}
       <div className="p-2 border-t border-dax-panel-border/50 space-y-0.5">
         <button
+          data-tour="nav-chat"
           onClick={onToggleChat}
           className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-fast w-full ${
             chatOpen

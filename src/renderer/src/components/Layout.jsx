@@ -16,6 +16,7 @@ import CrewsView from '../views/CrewsView';
 import KnowledgeBaseView from '../views/KnowledgeBaseView';
 import SettingsView from '../views/SettingsView';
 import ModelsView from '../views/ModelsView';
+import MarketplaceView from '../views/MarketplaceView';
 
 const views = {
   dashboard: DashboardView,
@@ -29,21 +30,9 @@ const views = {
   health: HealthView,
   'voice-plugins': VoicePluginsView,
   models: ModelsView,
-  marketplace: () => <PlaceholderView title="Marketplace" description="Browse and install community agents" />,
+  marketplace: MarketplaceView,
   settings: SettingsView,
 };
-
-function PlaceholderView({ title, description }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold text-dax-text-bright mb-2">{title}</h2>
-        <p className="text-dax-text-dim text-sm">{description}</p>
-        <p className="text-dax-text-dim text-xs mt-4 opacity-50">Coming soon</p>
-      </div>
-    </div>
-  );
-}
 
 export default function Layout() {
   const [activeView, setActiveView] = useState('dashboard');

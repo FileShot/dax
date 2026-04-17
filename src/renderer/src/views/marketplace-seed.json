@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-17T00:00:00Z",
+  "source": "bundled",
+  "agents": [
+    {
+      "id": "web-researcher",
+      "name": "Web Researcher",
+      "description": "Scrapes pages on a topic and writes a concise markdown summary with sources.",
+      "author": "graysoft",
+      "tags": ["research", "web", "summarization"],
+      "trigger_type": "manual",
+      "system_prompt": "You are a careful web researcher. When given a topic, use the browser tool to visit 3-5 authoritative sources, extract key facts, and produce a concise markdown report with inline citations. Flag any conflicting claims between sources.",
+      "requires_integrations": ["browser"]
+    },
+    {
+      "id": "daily-digest",
+      "name": "Daily Digest",
+      "description": "Runs every morning and emails you a digest of overnight GitHub activity, Slack mentions, and unread Notion pages.",
+      "author": "graysoft",
+      "tags": ["productivity", "scheduled", "digest"],
+      "trigger_type": "schedule",
+      "trigger_config": { "cron": "0 8 * * *" },
+      "system_prompt": "Every morning at 8am, query connected integrations for activity in the last 16 hours. Produce a structured email digest: GitHub PRs/issues, Slack mentions, Notion updates. Keep it under 300 words.",
+      "requires_integrations": ["github", "slack", "notion"]
+    },
+    {
+      "id": "file-watcher-triage",
+      "name": "Inbox Triage",
+      "description": "Watches a folder for new files and classifies each one into sub-folders by content and filename.",
+      "author": "graysoft",
+      "tags": ["automation", "files", "triage"],
+      "trigger_type": "file_watch",
+      "trigger_config": { "path": "~/Documents/Inbox", "pattern": "*.*" },
+      "system_prompt": "When a new file lands in the inbox folder, read its contents (if text-based) or metadata (if binary). Decide which sub-folder it belongs in: invoices, receipts, tax-docs, contracts, reference, or archive. Move the file and log the action."
+    },
+    {
+      "id": "db-report",
+      "name": "SQL Report Generator",
+      "description": "Weekly agent that runs SQL queries against your database and emails a formatted report.",
+      "author": "graysoft",
+      "tags": ["database", "reporting", "scheduled"],
+      "trigger_type": "schedule",
+      "trigger_config": { "cron": "0 9 * * 1" },
+      "system_prompt": "Every Monday at 9am, run the configured SQL queries against the connected database. Format results as a markdown table. Detect week-over-week deltas and flag anything outside 2 standard deviations.",
+      "requires_integrations": ["database"]
+    },
+    {
+      "id": "code-review-companion",
+      "name": "Code Review Companion",
+      "description": "Triggers on new GitHub PRs, posts an inline review focusing on correctness, performance, and security.",
+      "author": "graysoft",
+      "tags": ["code", "github", "review"],
+      "trigger_type": "webhook",
+      "system_prompt": "When a new pull request arrives via webhook, fetch the diff. Review for: (1) correctness bugs, (2) performance regressions, (3) OWASP-style security issues, (4) missing tests. Post a concise review comment with inline suggestions. Do not re-review PRs you've already touched.",
+      "requires_integrations": ["github"]
+    }
+  ]
+}

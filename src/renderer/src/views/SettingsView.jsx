@@ -133,6 +133,19 @@ function GeneralSection() {
               }`} />
             </button>
           </div>
+
+          <div className="flex items-center justify-between agent-card p-3">
+            <div>
+              <div className="text-xs font-medium text-dax-text">Guided Tour</div>
+              <div className="text-[10px] text-dax-text-dim mt-0.5">Replay the first-run walkthrough of the Dax UI</div>
+            </div>
+            <button
+              onClick={() => window.__daxTour?.start?.()}
+              className="btn-secondary btn-sm"
+            >
+              Restart Tour
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -30,7 +30,15 @@ module.exports = {
         }
         return { success: true, message: `SQLite database found: ${path.basename(dbPath)}` };
       }
-      return { success: true, message: `${creds.type} configured (connection test requires driver)` };
+      if (creds.type === 'postgresql') {
+        const r = await queryPostgres(creds, 'SELECT version()');
+        return { success: true, message: `PostgreSQL connected: ${r.rows?.[0]?.version?.slice(0, 40) || 'ok'}` };
+      }
+      if (creds.type === 'mysql') {
+        const r = await queryMysql(creds, 'SELECT VERSION() AS version');
+        return { success: true, message: `MySQL connected: ${r.rows?.[0]?.version || 'ok'}` };
+      }
+      return { success: false, message: `Unknown database type: ${creds.type}` };
     } catch (err) {
       return { success: false, message: err.message };
     }
@@ -48,11 +56,10 @@ module.exports = {
         throw new Error(`Blocked destructive query: ${upperSql.slice(0, 30)}... Set allow_write=true to permit`);
       }
 
-      if (creds.type === 'sqlite') {
-        return querySqlite(creds, sql, values);
-      }
-      // PostgreSQL and MySQL need external drivers
-      throw new Error(`${creds.type} requires external driver — install pg or mysql2 packages`);
+      if (creds.type === 'sqlite') return querySqlite(creds, sql, values);
+      if (creds.type === 'postgresql') return queryPostgres(creds, sql, values);
+      if (creds.type === 'mysql') return queryMysql(creds, sql, values);
+      throw new Error(`Unknown database type: ${creds.type}`);
     },
 
     list_tables: async (_params, creds) => {
@@ -61,27 +68,32 @@ module.exports = {
         return result.rows.map((r) => r.name);
       }
       if (creds.type === 'postgresql') {
-        throw new Error('PostgreSQL requires pg driver');
+        const r = await queryPostgres(creds, "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
+        return r.rows.map((row) => row.name);
       }
       if (creds.type === 'mysql') {
-        throw new Error('MySQL requires mysql2 driver');
+        const r = await queryMysql(creds, 'SHOW TABLES');
+        return r.rows.map((row) => Object.values(row)[0]);
       }
       throw new Error(`Unknown database type: ${creds.type}`);
     },
 
     describe_table: async (params, creds) => {
       if (!params.table) throw new Error('table parameter required');
+      const table = params.table.replace(/[^A-Za-z0-9_]/g, '');
       if (creds.type === 'sqlite') {
-        const result = await querySqlite(creds, `PRAGMA table_info("${params.table.replace(/"/g, '')}")`);        
-        return result.rows.map((r) => ({
-          name: r.name,
-          type: r.type,
-          notnull: !!r.notnull,
-          default_value: r.dflt_value,
-          primary_key: !!r.pk,
-        }));
+        const result = await querySqlite(creds, `PRAGMA table_info("${table}")`);
+        return result.rows.map((r) => ({ name: r.name, type: r.type, notnull: !!r.notnull, default_value: r.dflt_value, primary_key: !!r.pk }));
       }
-      throw new Error(`${creds.type} requires external driver`);
+      if (creds.type === 'postgresql') {
+        const r = await queryPostgres(creds, `SELECT column_name AS name, data_type AS type, is_nullable, column_default FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position`, [table]);
+        return r.rows.map((row) => ({ name: row.name, type: row.type, notnull: row.is_nullable === 'NO', default_value: row.column_default, primary_key: false }));
+      }
+      if (creds.type === 'mysql') {
+        const r = await queryMysql(creds, `DESCRIBE \`${table}\``);
+        return r.rows.map((row) => ({ name: row.Field, type: row.Type, notnull: row.Null === 'NO', default_value: row.Default, primary_key: row.Key === 'PRI' }));
+      }
+      throw new Error(`Unknown database type: ${creds.type}`);
     },
   },
   async connect(creds) { this.credentials = creds; },
@@ -122,5 +134,61 @@ async function querySqlite(creds, sql, values = []) {
     return { columns, rows, count: rows.length };
   } finally {
     db.close();
+  }
+}
+
+// PostgreSQL query helper using pg
+async function queryPostgres(creds, sql, values = []) {
+  let Client;
+  try { ({ Client } = require('pg')); }
+  catch (_) { throw new Error('pg driver not installed. Run: npm install pg'); }
+
+  const config = creds.connection_string
+    ? { connectionString: creds.connection_string }
+    : {
+        host: creds.host || 'localhost',
+        port: Number(creds.port) || 5432,
+        database: creds.database,
+        user: creds.username,
+        password: creds.password,
+      };
+
+  const client = new Client(config);
+  await client.connect();
+  try {
+    const res = await client.query(sql, values && values.length ? values : undefined);
+    return { columns: res.fields?.map((f) => f.name) || [], rows: res.rows || [], count: res.rowCount ?? (res.rows?.length || 0) };
+  } finally {
+    try { await client.end(); } catch (_) {}
+  }
+}
+
+// MySQL query helper using mysql2
+async function queryMysql(creds, sql, values = []) {
+  let mysql;
+  try { mysql = require('mysql2/promise'); }
+  catch (_) { throw new Error('mysql2 driver not installed. Run: npm install mysql2'); }
+
+  const config = creds.connection_string
+    ? { uri: creds.connection_string }
+    : {
+        host: creds.host || 'localhost',
+        port: Number(creds.port) || 3306,
+        database: creds.database,
+        user: creds.username,
+        password: creds.password,
+      };
+
+  const conn = await mysql.createConnection(config);
+  try {
+    const [rows, fields] = await conn.execute(sql, values || []);
+    const isSelect = Array.isArray(rows);
+    return {
+      columns: fields?.map((f) => f.name) || (isSelect && rows[0] ? Object.keys(rows[0]) : []),
+      rows: isSelect ? rows : [],
+      count: isSelect ? rows.length : (rows.affectedRows ?? 0),
+    };
+  } finally {
+    try { await conn.end(); } catch (_) {}
   }
 }
