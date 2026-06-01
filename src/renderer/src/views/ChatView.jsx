@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, User, Send, Loader2, Trash2, ChevronRight, MessageSquare } from 'lucide-react';
 import useChatStore from '../stores/useChatStore';
 import HelpGuide from '../components/HelpGuide';
+import ModelSelect from '../components/ModelSelect';
 import useAgentStore from '../stores/useAgentStore';
 import useModelStore from '../stores/useModelStore';
 import useRunStore from '../stores/useRunStore';
@@ -110,8 +111,15 @@ export default function ChatView({ onNavigate, onInspectAgent }) {
   const { models, fetch: fetchModels } = useModelStore();
   const { runs, fetch: fetchRuns } = useRunStore();
   const [schedulerStatus, setSchedulerStatus] = useState(null);
+  const [chatModelId, setChatModelId] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (!chatModelId && models.length > 0) {
+      setChatModelId(models[0].id);
+    }
+  }, [models, chatModelId]);
 
   useEffect(() => {
     fetchAgents();
@@ -210,6 +218,7 @@ You have real-time awareness of agent status and recent results. When the user a
       await window.dax.chat.send({
         messages: chatMessages,
         system: buildSystemPrompt(),
+        ...(chatModelId ? { model: chatModelId } : {}),
       });
     } catch (err) {
       endStream();
@@ -217,7 +226,7 @@ You have real-time awareness of agent status and recent results. When the user a
       return;
     }
     endStream();
-  }, [input, streaming, addMessage, startStream, endStream, buildSystemPrompt]);
+  }, [input, streaming, chatModelId, addMessage, startStream, endStream, buildSystemPrompt, fetchAgents, fetchRuns]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -242,13 +251,23 @@ You have real-time awareness of agent status and recent results. When the user a
             </span>
           )}
         </div>
-        <button
-          onClick={clearHistory}
-          className="p-1.5 rounded text-dax-text-dim hover:text-dax-text hover:bg-dax-card transition-colors"
-          title="Clear history"
-        >
-          <Trash2 size={14} />
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-44">
+            <ModelSelect
+              value={chatModelId}
+              onChange={setChatModelId}
+              allowEmpty={false}
+              placeholder="Model"
+            />
+          </div>
+          <button
+            onClick={clearHistory}
+            className="p-1.5 rounded text-dax-text-dim hover:text-dax-text hover:bg-dax-card transition-colors"
+            title="Clear history"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Messages */}

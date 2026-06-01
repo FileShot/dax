@@ -126,6 +126,7 @@ contextBridge.exposeInMainWorld('dax', {
   models: {
     list:      () => ipcRenderer.invoke('models-list'),
     scanLocal: () => ipcRenderer.invoke('models-scan-local'),
+    importLocal: () => ipcRenderer.invoke('models-import-local'),
     add:       (model) => ipcRenderer.invoke('models-add', model),
     delete:    (id) => ipcRenderer.invoke('models-delete', id),
     searchHF:  (opts) => ipcRenderer.invoke('models-search-hf', opts),

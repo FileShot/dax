@@ -154,8 +154,10 @@ function GeneralSection() {
 
 function PathsSection() {
   const [paths, setPaths] = useState({ userData: '', modelsDir: '', logPath: '' });
+  const [changingModelsDir, setChangingModelsDir] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
 
-  useEffect(() => {
+  const loadPaths = () => {
     if (!window.dax) return;
     Promise.all([
       window.dax.system.userData(),
@@ -164,38 +166,120 @@ function PathsSection() {
     ]).then(([userData, modelsDir, logPath]) => {
       setPaths({ userData, modelsDir, logPath });
     }).catch((err) => console.error('[Settings] Failed to load paths:', err));
-  }, []);
+  };
+
+  useEffect(() => { loadPaths(); }, []);
 
   const openFolder = (p) => {
     if (p && window.dax?.openFolder) window.dax.openFolder(p);
   };
 
+  const changeModelsDir = async () => {
+    if (!window.dax?.openFolder || !window.dax?.settings?.set) return;
+    setChangingModelsDir(true);
+    setImportStatus('');
+    try {
+      const picked = await window.dax.openFolder();
+      if (!picked) return;
+      await window.dax.settings.set('models_dir', picked);
+      const result = await window.dax.models.importLocal();
+      setImportStatus(`Imported ${result?.imported ?? 0} model(s) from folder`);
+      loadPaths();
+    } catch (err) {
+      setImportStatus(err.message || 'Failed to update models folder');
+    } finally {
+      setChangingModelsDir(false);
+    }
+  };
+
+  const rescanModels = async () => {
+    setChangingModelsDir(true);
+    setImportStatus('');
+    try {
+      const result = await window.dax.models.importLocal();
+      setImportStatus(`Found ${result?.scanned ?? 0} file(s), registered ${result?.imported ?? 0}`);
+      loadPaths();
+    } catch (err) {
+      setImportStatus(err.message || 'Scan failed');
+    } finally {
+      setChangingModelsDir(false);
+    }
+  };
+
   return (
     <div>
-      <h3 className="text-sm font-medium text-dax-text-bright mb-4">Paths & Storage</h3>
+      <h3 className="text-sm font-medium text-dax-text-bright mb-1">Paths & Storage</h3>
+      <p className="text-xs text-dax-text-dim mb-4">
+        Point Dax at a folder of <code className="text-dax-accent">.gguf</code> files, then scan to load them into the app.
+      </p>
       <div className="flex flex-col gap-3">
-        {[
-          { label: 'User Data', icon: Database, path: paths.userData },
-          { label: 'Models Directory', icon: FolderOpen, path: paths.modelsDir },
-          { label: 'Log File', icon: FileText, path: paths.logPath },
-        ].map(({ label, icon: Icon, path }) => (
-          <div key={label} className="agent-card p-3 flex items-center justify-between">
+        <div className="agent-card p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Database size={14} className="text-dax-text-dim shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-dax-text">User Data</div>
+              <div className="text-[10px] text-dax-text-dim truncate mt-0.5">{paths.userData || 'Loading...'}</div>
+            </div>
+          </div>
+          <button
+            onClick={() => openFolder(paths.userData)}
+            className="text-dax-text-dim hover:text-dax-accent transition-fast shrink-0 ml-3"
+            title="Open in explorer"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+
+        <div className="agent-card p-3">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <Icon size={14} className="text-dax-text-dim shrink-0" />
+              <FolderOpen size={14} className="text-dax-text-dim shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <div className="text-xs font-medium text-dax-text">{label}</div>
-                <div className="text-[10px] text-dax-text-dim truncate mt-0.5">{path || 'Loading...'}</div>
+                <div className="text-xs font-medium text-dax-text">Models Directory</div>
+                <div className="text-[10px] text-dax-text-dim break-all mt-0.5">{paths.modelsDir || 'Loading...'}</div>
               </div>
             </div>
-            <button
-              onClick={() => openFolder(path)}
-              className="text-dax-text-dim hover:text-dax-accent transition-fast shrink-0 ml-3"
-              title="Open in explorer"
-            >
-              <ChevronRight size={14} />
-            </button>
+            <div className="flex flex-col gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={changeModelsDir}
+                disabled={changingModelsDir}
+                className="btn-primary btn-sm text-[10px] whitespace-nowrap"
+              >
+                {changingModelsDir ? 'Working…' : 'Change folder'}
+              </button>
+              <button
+                type="button"
+                onClick={rescanModels}
+                disabled={changingModelsDir}
+                className="btn-secondary btn-sm text-[10px] whitespace-nowrap flex items-center gap-1 justify-center"
+              >
+                <RefreshCw size={10} className={changingModelsDir ? 'animate-spin' : ''} />
+                Scan folder
+              </button>
+            </div>
           </div>
-        ))}
+          {importStatus && (
+            <p className="text-[10px] text-dax-accent mt-2 pl-7">{importStatus}</p>
+          )}
+        </div>
+
+        <div className="agent-card p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <FileText size={14} className="text-dax-text-dim shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-dax-text">Log File</div>
+              <div className="text-[10px] text-dax-text-dim truncate mt-0.5">{paths.logPath || 'Loading...'}</div>
+            </div>
+          </div>
+          <button
+            onClick={() => openFolder(paths.logPath)}
+            className="text-dax-text-dim hover:text-dax-accent transition-fast shrink-0 ml-3"
+            title="Open in explorer"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

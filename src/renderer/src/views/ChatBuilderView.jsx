@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { NODE_TYPES, getNodesByCategory } from '../builder/node-types';
 import HelpGuide from '../components/HelpGuide';
+import ModelSelect from '../components/ModelSelect';
+import useModelStore from '../stores/useModelStore';
 
 const EXAMPLE_PROMPTS = [
   'Monitor a folder for new CSV files and send me a notification when one appears',
@@ -21,8 +23,20 @@ export default function ChatBuilderView({ onNavigate }) {
   const [generatedWorkflow, setGeneratedWorkflow] = useState(null);
   const [agentName, setAgentName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [chatModelId, setChatModelId] = useState('');
+  const { models, fetch: fetchModels } = useModelStore();
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
+  useEffect(() => {
+    if (!chatModelId && models.length > 0) {
+      setChatModelId(models[0].id);
+    }
+  }, [models, chatModelId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,20 +85,17 @@ Rules:
 - Keep it practical — 2-6 nodes typically
 - The first node should be a trigger`;
 
-      const result = await window.dax.engine.run({
-        name: '_chat_builder',
-        system_prompt: systemPrompt,
-        trigger_type: 'manual',
-        model_id: '',
-        temperature: 0.3,
-        token_budget: 4096,
-      }, { prompt });
+      const result = await window.dax.chat.send({
+        system: systemPrompt,
+        messages: [{ role: 'user', content: prompt }],
+        ...(chatModelId ? { model: chatModelId } : {}),
+      });
 
-      if (result && result.result) {
+      if (result && result.content) {
         let parsed = null;
         try {
           // Try to parse the result — it might be wrapped in markdown code blocks
-          let raw = result.result;
+          let raw = result.content;
           if (typeof raw === 'string') {
             // Strip markdown code fences
             raw = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -169,12 +180,22 @@ Rules:
           </span>
           <HelpGuide page="chatBuilder" />
         </div>
-        {messages.length > 0 && (
-          <button onClick={resetChat} className="btn-secondary btn-sm">
-            <RotateCcw size={12} />
-            New Chat
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="w-44">
+            <ModelSelect
+              value={chatModelId}
+              onChange={setChatModelId}
+              allowEmpty={false}
+              placeholder="Model"
+            />
+          </div>
+          {messages.length > 0 && (
+            <button onClick={resetChat} className="btn-secondary btn-sm">
+              <RotateCcw size={12} />
+              New Chat
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

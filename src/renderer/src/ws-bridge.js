@@ -218,6 +218,7 @@ export function initWebSocketBridge() {
     models: {
       list:      () => _invoke('models-list'),
       scanLocal: () => _invoke('models-scan-local'),
+      importLocal: () => _invoke('models-import-local'),
       add:       (model) => _invoke('models-add', model),
       delete:    (id) => _invoke('models-delete', id),
       searchHF:  (opts) => _invoke('models-search-hf', opts),

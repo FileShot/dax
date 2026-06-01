@@ -336,6 +336,18 @@ try {
     assert(schemas.chatMessage, 'chatMessage schema should exist');
   });
 
+  test('Schemas: agentRun validates tuple', () => {
+    const schemas = require('../src/main/ipc-schemas');
+    const result = schemas.agentRun.safeParse(['agent-id', { prompt: 'hello' }]);
+    assert(result.success, `agentRun should pass: ${JSON.stringify(result.error?.issues)}`);
+  });
+
+  test('Schemas: agentsUpdate validates id + workflow fields', () => {
+    const schemas = require('../src/main/ipc-schemas');
+    const result = schemas.agentsUpdate.safeParse(['agent-id', { nodes: [], edges: [] }]);
+    assert(result.success, `agentsUpdate should pass: ${JSON.stringify(result.error?.issues)}`);
+  });
+
   // ─── Results ──────────────────────────────────────────
   console.log('');
   console.log('========================================');

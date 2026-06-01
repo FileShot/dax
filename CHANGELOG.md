@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.3] — 2026-06-01
+
+### Fixed
+- Zod 4 IPC validation (`z.record` key/value, tuple schemas for `agents-update` / `crews-update`, `.issues` error formatting)
+- Missing Electron handlers for `output-files-list` and `output-files-read`
+- Production CSP blocking community marketplace manifest (`raw.githubusercontent.com`)
+- Chat Builder using `chat-message` instead of miswired `agent-run`
+
+### Added
+- Configurable `models_dir` setting with folder picker and recursive `.gguf` scan/import
+- `models-import-local` IPC; auto-register models after HuggingFace download
+- Shared `ModelSelect` on Chat, Agent Creator, and Models page scan/refresh UX
+
+---
+
 ## [0.1.1] — 2025-04-07
 
 ### Fixed
@@ -91,5 +106,7 @@ First public release of Dax. Core platform is functional and stable for Windows.
 
 ---
 
+[0.1.3]: https://github.com/FileShot/dax/releases/tag/v0.1.3
+[0.1.2]: https://github.com/FileShot/dax/releases/tag/v0.1.2
 [0.1.1]: https://github.com/FileShot/dax/releases/tag/v0.1.1
 [0.1.0]: https://github.com/FileShot/dax/releases/tag/v0.1.0

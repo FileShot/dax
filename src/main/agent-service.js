@@ -11,6 +11,13 @@ const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const metrics = require('./engine/metrics');
+const {
+  getDefaultModelsDir,
+  readModelsDirSetting,
+  scanGgufFiles,
+  modelIdForPath,
+  OLLAMA_DEFAULT_URL,
+} = require('./models-dir');
 
 // ─── Paths ──────────────────────────────────────────────────
 const USER_DATA = process.env.DAX_USER_DATA || path.join(
@@ -888,17 +895,28 @@ async function handleMessage(msg) {
         break;
       }
       case 'models-scan-local': {
-        const files = [];
-        if (fs.existsSync(MODELS_DIR)) {
-          for (const file of fs.readdirSync(MODELS_DIR)) {
-            if (file.toLowerCase().endsWith('.gguf')) {
-              const filePath = path.join(MODELS_DIR, file);
-              const stats = fs.statSync(filePath);
-              files.push({ name: file.replace('.gguf', ''), path: filePath, size: stats.size, modified: stats.mtime.toISOString() });
-            }
-          }
+        const db = await getDb();
+        const modelsDir = readModelsDirSetting(dbGet, db, USER_DATA);
+        result = scanGgufFiles(modelsDir);
+        break;
+      }
+      case 'models-import-local': {
+        const db = await getDb();
+        const modelsDir = readModelsDirSetting(dbGet, db, USER_DATA);
+        const files = scanGgufFiles(modelsDir);
+        let imported = 0;
+        for (const file of files) {
+          const modelId = modelIdForPath(file.path);
+          dbRun(db, `INSERT OR REPLACE INTO models (id, name, provider, model_path, context_size, gpu_layers) VALUES (?, ?, ?, ?, ?, ?)`,
+            [modelId, file.name, 'ollama', OLLAMA_DEFAULT_URL, 4096, 0]);
+          imported++;
         }
-        result = files;
+        result = {
+          imported,
+          scanned: files.length,
+          modelsDir,
+          models: dbAll(db, 'SELECT * FROM models ORDER BY name ASC'),
+        };
         break;
       }
       case 'models-add': {
@@ -990,8 +1008,10 @@ async function handleMessage(msg) {
         const safeName = path.basename(dlFilename).replace(/[^a-zA-Z0-9._-]/g, '_');
         if (!safeName.toLowerCase().endsWith('.gguf')) throw new Error('Only .gguf files can be downloaded');
 
-        const destPath = path.join(MODELS_DIR, safeName);
-        if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
+        const db = await getDb();
+        const modelsDir = readModelsDirSetting(dbGet, db, USER_DATA);
+        const destPath = path.join(modelsDir, safeName);
+        if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
 
         // Stream download with progress
         const dlModule = parsedDlUrl.protocol === 'https:' ? require('https') : require('http');
@@ -1029,7 +1049,11 @@ async function handleMessage(msg) {
           follow(dlUrl);
         });
         sendToParent('model-download-progress', { filename: safeName, downloaded: -1, total: -1, percent: 100, done: true });
-        result = { success: true, path: destPath, filename: safeName };
+        const baseName = safeName.replace(/\.gguf$/i, '');
+        const modelId = modelIdForPath(destPath);
+        dbRun(db, `INSERT OR REPLACE INTO models (id, name, provider, model_path, context_size, gpu_layers) VALUES (?, ?, ?, ?, ?, ?)`,
+          [modelId, baseName, 'ollama', OLLAMA_DEFAULT_URL, 4096, 0]);
+        result = { success: true, path: destPath, filename: safeName, modelId, name: baseName };
         break;
       }
 
@@ -1300,11 +1324,15 @@ async function handleMessage(msg) {
           platform: process.platform, arch: process.arch,
           cpus: os.cpus().length, totalMemory: os.totalmem(), freeMemory: os.freemem(),
           nodeVersion: process.versions.node, userDataPath: USER_DATA,
-          modelsDir: MODELS_DIR, dbPath: DB_PATH,
+          modelsDir: readModelsDirSetting(dbGet, await getDb(), USER_DATA), dbPath: DB_PATH,
         };
         break;
       }
-      case 'get-models-dir': { result = MODELS_DIR; break; }
+      case 'get-models-dir': {
+        const db = await getDb();
+        result = readModelsDirSetting(dbGet, db, USER_DATA);
+        break;
+      }
       case 'get-user-data': { result = USER_DATA; break; }
       case 'get-log-path': { result = LOG_FILE; break; }
       case 'get-recent-logs': {

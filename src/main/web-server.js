@@ -184,20 +184,8 @@ function buildHandlers() {
   proxy('models-delete');
   proxy('models-search-hf');
   proxy('models-download');
-
-  handlers['models-scan-local'] = async () => {
-    const files = [];
-    if (fs.existsSync(MODELS_DIR)) {
-      for (const file of fs.readdirSync(MODELS_DIR)) {
-        if (file.toLowerCase().endsWith('.gguf')) {
-          const filePath = path.join(MODELS_DIR, file);
-          const stats = fs.statSync(filePath);
-          files.push({ name: file.replace('.gguf', ''), path: filePath, size: stats.size, modified: stats.mtime.toISOString() });
-        }
-      }
-    }
-    return files;
-  };
+  proxy('models-scan-local');
+  proxy('models-import-local');
 
   // ── Scheduler / Tools ──
   proxy('scheduler-status');
@@ -280,7 +268,7 @@ function buildHandlers() {
       nodeVersion: process.version,
     };
   };
-  handlers['get-models-dir'] = async () => MODELS_DIR;
+  proxy('get-models-dir');
   handlers['get-user-data'] = async () => USER_DATA;
   handlers['get-log-path'] = async () => LOG_FILE;
   handlers['get-recent-logs'] = async (lines = 100) => {

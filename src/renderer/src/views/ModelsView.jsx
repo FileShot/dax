@@ -67,9 +67,10 @@ function useDownloadProgress() {
         ...prev,
         [data.filename]: data,
       }));
+      if (data.done) fetchModels();
     });
     return () => { if (typeof unsub === 'function') unsub(); };
-  }, []);
+  }, [fetchModels]);
 
   return downloads;
 }
@@ -215,7 +216,9 @@ function InstalledModelRow({ model, onDelete }) {
 
 // ── Main ModelsView ────────────────────────────────────────
 export default function ModelsView() {
-  const { models, loading, fetch: fetchModels, remove } = useModelStore();
+  const { models, loading, scanning, fetch: fetchModels, importLocal, remove } = useModelStore();
+  const [modelsDir, setModelsDir] = useState('');
+  const [importMessage, setImportMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -224,7 +227,26 @@ export default function ModelsView() {
   const downloads = useDownloadProgress();
   const searchTimeoutRef = useRef(null);
 
-  useEffect(() => { fetchModels(); }, []);
+  const refreshAll = useCallback(async () => {
+    setImportMessage('');
+    try {
+      if (window.dax?.system?.modelsDir) {
+        const dir = await window.dax.system.modelsDir();
+        setModelsDir(dir || '');
+      }
+      const result = await importLocal();
+      setImportMessage(
+        result
+          ? `Scanned ${result.scanned ?? 0} .gguf file(s), ${result.imported ?? 0} registered`
+          : '',
+      );
+    } catch (err) {
+      setImportMessage(err.message || 'Import failed');
+      await fetchModels();
+    }
+  }, [importLocal, fetchModels]);
+
+  useEffect(() => { refreshAll(); }, []);
 
   const installedNames = new Set(models.map(m => m.name));
 
@@ -282,12 +304,25 @@ export default function ModelsView() {
           </h1>
           <p className="text-sm text-dax-text-dim mt-1">
             {models.length} model{models.length !== 1 ? 's' : ''} configured
+            {modelsDir && (
+              <span className="block text-[10px] mt-0.5 truncate max-w-xl" title={modelsDir}>
+                Folder: {modelsDir}
+              </span>
+            )}
           </p>
+          {importMessage && (
+            <p className="text-[10px] text-dax-accent mt-1">{importMessage}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <HelpGuide page="models" />
-          <button onClick={fetchModels} className="btn-secondary btn-sm flex items-center gap-1.5" disabled={loading}>
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+          <button
+            onClick={refreshAll}
+            className="btn-secondary btn-sm flex items-center gap-1.5"
+            disabled={loading || scanning}
+            title="Rescan models folder and refresh list"
+          >
+            <RefreshCw size={12} className={(loading || scanning) ? 'animate-spin' : ''} /> Scan &amp; refresh
           </button>
         </div>
       </div>
@@ -395,9 +430,12 @@ export default function ModelsView() {
             <div className="text-center py-12">
               <HardDrive size={32} className="text-gray-600 mx-auto mb-3" />
               <p className="text-sm text-dax-text-dim mb-1">No models configured</p>
-              <p className="text-[10px] text-dax-text-dim">
-                Download a model from the Discover tab or add one manually
+              <p className="text-[10px] text-dax-text-dim mb-3">
+                Set your models folder in Settings → Paths, or use Scan &amp; refresh above
               </p>
+              <button type="button" onClick={refreshAll} className="btn-primary btn-sm">
+                Scan models folder
+              </button>
             </div>
           ) : (
             <div className="agent-card divide-y divide-gray-800/30">

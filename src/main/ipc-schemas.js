@@ -24,7 +24,7 @@ exports.agentsCreate = z.object({
   system_prompt: longStr.optional().default(''),
   description: shortStr.optional().default(''),
   trigger_type: z.enum(['manual', 'schedule', 'webhook', 'file_watch']).optional().default('manual'),
-  trigger_config: z.record(z.unknown()).optional().default({}),
+  trigger_config: z.record(z.string(), z.unknown()).optional().default({}),
   tool_ids: z.array(z.string().max(128)).max(50).optional().default([]),
   integration_ids: z.array(z.string().max(128)).max(100).optional().default([]),
   mcp_server_ids: z.array(z.string().max(128)).max(20).optional().default([]),
@@ -35,13 +35,14 @@ exports.agentsCreate = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
-exports.agentsUpdate = z.object({
+const agentsUpdateFields = z.object({
   name: z.string().min(1).max(200).optional(),
   model: z.string().min(1).max(200).optional(),
+  model_id: id.optional(),
   system_prompt: longStr.optional(),
   description: shortStr.optional(),
   trigger_type: z.enum(['manual', 'schedule', 'webhook', 'file_watch']).optional(),
-  trigger_config: z.record(z.unknown()).optional(),
+  trigger_config: z.record(z.string(), z.unknown()).optional(),
   tool_ids: z.array(z.string().max(128)).max(50).optional(),
   integration_ids: z.array(z.string().max(128)).max(100).optional(),
   mcp_server_ids: z.array(z.string().max(128)).max(20).optional(),
@@ -49,14 +50,20 @@ exports.agentsUpdate = z.object({
   max_iterations: z.number().int().min(1).max(100).optional(),
   temperature: z.number().min(0).max(2).optional(),
   timeout_seconds: z.number().int().min(10).max(3600).optional(),
+  max_retries: z.number().int().min(0).max(100).optional(),
+  token_budget: z.number().int().min(1).max(10_000_000).optional(),
   enabled: z.boolean().optional(),
+  nodes: z.array(z.unknown()).optional(),
+  edges: z.array(z.unknown()).optional(),
 }).strict();
+
+exports.agentsUpdate = z.tuple([id, agentsUpdateFields]);
 
 // ─── Agent Run ─────────────────────────────────────────────
 
 exports.agentRun = z.tuple([
   id,  // agentId
-  z.record(z.unknown()).optional(),  // triggerData — arbitrary, validated downstream
+  z.record(z.string(), z.unknown()).optional(),  // triggerData — arbitrary, validated downstream
 ]);
 
 // ─── Models ────────────────────────────────────────────────
@@ -78,6 +85,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
   'log_level', 'max_concurrent_runs', 'default_temperature',
   'voice_enabled', 'voice_model', 'voice_language',
   'kb_embedding_model', 'kb_chunk_size', 'kb_chunk_overlap',
+  'models_dir',
 ]);
 
 exports.settingsSet = z.tuple([
@@ -102,20 +110,20 @@ exports.mcpAddServer = z.object({
 
 exports.mcpCallTool = z.tuple([
   z.string().min(1).max(200),  // toolName
-  z.record(z.unknown()),       // args
+  z.record(z.string(), z.unknown()),       // args
 ]);
 
 // ─── Integrations ──────────────────────────────────────────
 
 exports.integrationConnect = z.tuple([
   id,                          // integrationId
-  z.record(z.unknown()),       // credentials — structure varies per integration
+  z.record(z.string(), z.unknown()),       // credentials — structure varies per integration
 ]);
 
 exports.integrationAction = z.tuple([
   id,                          // integrationId
   z.string().min(1).max(200),  // actionName
-  z.record(z.unknown()),       // params
+  z.record(z.string(), z.unknown()),       // params
 ]);
 
 // ─── Crews ─────────────────────────────────────────────────
@@ -132,7 +140,7 @@ exports.crewsCreate = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
-exports.crewsUpdate = z.object({
+const crewsUpdateFields = z.object({
   name: z.string().min(1).max(200).optional(),
   description: shortStr.optional(),
   agents: z.array(z.object({
@@ -144,9 +152,11 @@ exports.crewsUpdate = z.object({
   enabled: z.boolean().optional(),
 }).strict();
 
+exports.crewsUpdate = z.tuple([id, crewsUpdateFields]);
+
 exports.crewsRun = z.tuple([
   id,  // crewId
-  z.record(z.unknown()).optional(),  // triggerData
+  z.record(z.string(), z.unknown()).optional(),  // triggerData
 ]);
 
 // ─── Voice ─────────────────────────────────────────────────
@@ -199,7 +209,7 @@ exports.oauthStart = z.object({
   integrationId: id,
   clientId: z.string().min(1).max(500),
   clientSecret: z.string().max(500).optional(),
-  options: z.record(z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ─── Logs ──────────────────────────────────────────────────
@@ -217,7 +227,7 @@ exports.agentImportData = z.object({
     system_prompt: longStr.optional(),
     description: shortStr.optional(),
     trigger_type: z.string().max(50).optional(),
-    trigger_config: z.record(z.unknown()).optional(),
+    trigger_config: z.record(z.string(), z.unknown()).optional(),
     tool_ids: z.array(z.string().max(128)).max(50).optional(),
     integration_ids: z.array(z.string().max(128)).max(100).optional(),
   }),

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const useModelStore = create((set) => ({
+const useModelStore = create((set, get) => ({
   models: [],
   loading: false,
   scanning: false,
@@ -26,6 +26,25 @@ const useModelStore = create((set) => ({
       console.error('Failed to scan local models:', e);
       set({ scanning: false });
       return [];
+    }
+  },
+
+  /** Scan models folder and register all .gguf files in the database. */
+  importLocal: async () => {
+    set({ scanning: true });
+    try {
+      const result = await window.dax.models.importLocal();
+      if (result?.models) {
+        set({ models: result.models, scanning: false });
+      } else {
+        await get().fetch();
+        set({ scanning: false });
+      }
+      return result;
+    } catch (e) {
+      console.error('Failed to import local models:', e);
+      set({ scanning: false });
+      throw e;
     }
   },
 

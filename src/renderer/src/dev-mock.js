@@ -222,6 +222,7 @@ if (typeof window !== 'undefined' && !window.__electronPreload) {
         { id: 'qwen2.5-3b', name: 'qwen2.5-3b', provider: 'ollama', type: 'local', model_path: 'http://localhost:11434/v1', supports_tools: null },
       ],
       scanLocal: async () => [],
+      importLocal: async () => ({ imported: 0, scanned: 0, models: [] }),
       add: async (model) => { console.log('[MOCK] add model:', model); return { success: true }; },
       delete: async (id) => { console.log('[MOCK] delete model:', id); return { success: true }; },
       searchHF: async ({ query }) => {

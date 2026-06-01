@@ -189,7 +189,7 @@ function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'"
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://raw.githubusercontent.com"
           ],
         },
       });
@@ -271,7 +271,8 @@ function ipcSafe(channel, handler, schema = null) {
     if (schema) {
       const parsed = schema.safeParse(args.length === 1 ? args[0] : args);
       if (!parsed.success) {
-        const msg = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+        const issues = parsed.error?.issues ?? parsed.error?.errors ?? [];
+        const msg = issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
         log('warn', 'IPC', `Validation failed: ${channel}`, { errors: msg });
         throw new Error(`Invalid input: ${msg}`);
       }
@@ -566,25 +567,8 @@ ipcSafe('runs-get', (_e, id) => serviceCall('runs-get', id));
 // ─── IPC: Models (proxied to service) ───────────────────────
 ipcSafe('models-list', () => serviceCall('models-list'));
 
-ipcSafe('models-scan-local', () => {
-  // Scan MODELS_DIR for .gguf files (stays local — filesystem access)
-  const files = [];
-  if (fs.existsSync(MODELS_DIR)) {
-    for (const file of fs.readdirSync(MODELS_DIR)) {
-      if (file.toLowerCase().endsWith('.gguf')) {
-        const filePath = path.join(MODELS_DIR, file);
-        const stats = fs.statSync(filePath);
-        files.push({
-          name: file.replace('.gguf', ''),
-          path: filePath,
-          size: stats.size,
-          modified: stats.mtime.toISOString(),
-        });
-      }
-    }
-  }
-  return files;
-});
+ipcSafe('models-scan-local', () => serviceCall('models-scan-local'));
+ipcSafe('models-import-local', () => serviceCall('models-import-local'));
 
 ipcSafe('models-add', (_e, model) => serviceCall('models-add', model), schemas.modelsAdd);
 ipcSafe('models-delete', (_e, id) => serviceCall('models-delete', id));
@@ -609,7 +593,7 @@ ipcSafe('system-info', () => {
     electronVersion: process.versions.electron,
     appVersion: app.getVersion(),
     userDataPath: USER_DATA,
-    modelsDir: MODELS_DIR,
+    modelsDir: MODELS_DIR, // default; use get-models-dir for configured path
     dbPath: DB_PATH,
     versions: {
       electron: process.versions.electron,
@@ -620,7 +604,7 @@ ipcSafe('system-info', () => {
 });
 
 // ─── IPC: Paths ─────────────────────────────────────────────
-ipcSafe('get-models-dir', () => MODELS_DIR);
+ipcSafe('get-models-dir', () => serviceCall('get-models-dir'));
 ipcSafe('get-user-data', () => USER_DATA);
 
 // ─── IPC: Logs ──────────────────────────────────────────────
@@ -638,6 +622,8 @@ ipcSafe('get-recent-logs', (_e, lines = 100) => {
 
 // ─── Agent Execution Engine (proxied to service) ────────────
 ipcSafe('agent-run', (_e, agentId, triggerData) => serviceCall('agent-run', agentId, triggerData), schemas.agentRun);
+ipcSafe('output-files-list', () => serviceCall('output-files-list'));
+ipcSafe('output-files-read', (_e, name) => serviceCall('output-files-read', name));
 ipcSafe('agent-cancel-run', (_e, runId) => serviceCall('agent-cancel-run', runId));
 ipcSafe('agent-active-runs', () => serviceCall('agent-active-runs'));
 ipcSafe('tools-list', () => serviceCall('tools-list'));
